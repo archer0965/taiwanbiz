@@ -38,20 +38,44 @@ export function DashboardNav() {
   const normalizedEmail = email?.trim().toLowerCase() ?? "";
   if (normalizedEmail !== ownerKey) {
     setOwnerKey(normalizedEmail);
-    if (!normalizedEmail || isAdmin) {
+    if (!normalizedEmail) {
       setOwnerSlug(null);
-    } else if (typeof window !== "undefined") {
+    } else if (typeof window !== "undefined" && !isAdmin) {
       setOwnerSlug(getTenantsByOwnerEmail(normalizedEmail)[0]?.slug ?? null);
     }
   }
 
   useEffect(() => {
-    if (!email || isAdmin) return;
+    if (!email) return;
+    let cancelled = false;
+    // Admins also resolve an operable store slug from /api/stores/mine
+    // so preview / product links stay usable (not locked to /admin only).
+    void fetch("/api/stores/mine", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const list = (data.tenants || []) as Array<{ slug?: string }>;
+        const slug = list[0]?.slug || null;
+        if (slug) setOwnerSlug(slug);
+        else if (!isAdmin && email) {
+          setOwnerSlug(getTenantsByOwnerEmail(email)[0]?.slug ?? null);
+        }
+      })
+      .catch(() => {
+        if (!isAdmin && email) {
+          setOwnerSlug(getTenantsByOwnerEmail(email)[0]?.slug ?? null);
+        }
+      });
+
     function sync() {
-      setOwnerSlug(getTenantsByOwnerEmail(email ?? "")[0]?.slug ?? null);
+      if (isAdmin || !email) return;
+      setOwnerSlug(getTenantsByOwnerEmail(email)[0]?.slug ?? null);
     }
     window.addEventListener("taiwanbiz-storage", sync);
-    return () => window.removeEventListener("taiwanbiz-storage", sync);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("taiwanbiz-storage", sync);
+    };
   }, [email, isAdmin]);
 
   const links = useMemo(() => {
@@ -153,7 +177,7 @@ export function DashboardNav() {
               拓脈
             </span>
             <span className="block truncate text-[11px] text-slate-400">
-              {isAdmin ? "總管理員" : "店家後台"} · NovaOS
+              {isAdmin ? "管理者・功能工作台" : "店家後台"} · NovaOS
             </span>
           </span>
         </Link>
@@ -198,10 +222,18 @@ export function DashboardNav() {
         <p className="truncate px-2 text-xs text-slate-400">
           {data?.user?.name || "未登入使用者"}
         </p>
-        {!isAdmin && ownerSlug ? (
+        {ownerSlug ? (
           <p className="mt-1 truncate px-2 text-xs text-emerald-700">
-            綁定店家：/stores/{ownerSlug}
+            {isAdmin ? "操作店家" : "綁定店家"}：/stores/{ownerSlug}
           </p>
+        ) : null}
+        {isAdmin ? (
+          <Link
+            href="/admin/dashboard"
+            className="mt-2 block rounded-xl px-2 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+          >
+            進入管理後台
+          </Link>
         ) : null}
         <Button
           variant="ghost"

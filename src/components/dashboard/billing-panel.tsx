@@ -183,10 +183,15 @@ export function BillingPanel() {
         <Card>
           <CardContent className="p-6 text-sm text-slate-600">
             {isAdmin
-              ? "總管請至總管理後台操作各店解約。"
+              ? "目前沒有可顯示的店家訂閱。可先至管理後台開通店家，或在功能工作台選擇已有店家。"
               : "此 Email 尚未綁定店家訂閱。"}
             {isAdmin ? (
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/dashboard">
+                  <Button as="span" variant="outline">
+                    返回功能工作台
+                  </Button>
+                </Link>
                 <Link href="/admin/dashboard">
                   <Button as="span" variant="outline">
                     打開總管理後台

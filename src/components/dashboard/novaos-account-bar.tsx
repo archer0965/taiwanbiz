@@ -94,10 +94,24 @@ export function NovaOsAccountBar({ className }: { className?: string }) {
           <div className="absolute right-0 z-50 mt-2 w-56 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
             <p className="truncate px-3 py-2 text-xs text-stone-500">{email}</p>
             <a
+              href="/dashboard"
+              className="block rounded-xl px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-50"
+              onClick={() => setMenuOpen(false)}
+            >
+              前往功能工作台
+            </a>
+            <a
+              href="/admin/dashboard"
+              className="block rounded-xl px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-50"
+              onClick={() => setMenuOpen(false)}
+            >
+              進入管理後台
+            </a>
+            <a
               href={`${NOVAOS_HUB_URL}/dashboard`}
               target="_blank"
               rel="noopener noreferrer"
-              className="block rounded-xl px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-50"
+              className="block rounded-xl px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
               onClick={() => setMenuOpen(false)}
             >
               前往 NovaOS 主站中控

@@ -73,11 +73,14 @@ export function LoginForm({
     setError("");
     setLoading("demo");
     try {
+      // Admin lands on product workspace by default; /admin only when explicitly requested.
+      const dest =
+        callbackUrl.startsWith("/admin") || callbackUrl.startsWith("/dashboard")
+          ? callbackUrl
+          : "/dashboard";
       await signIn("demo", {
         email: DEVELOPER_EMAILS[0],
-        callbackUrl: callbackUrl.startsWith("/admin")
-          ? callbackUrl
-          : "/admin/dashboard",
+        callbackUrl: dest,
         redirect: true,
       });
     } catch {
@@ -118,12 +121,14 @@ export function LoginForm({
         return;
       }
       if (data.role === "admin" && !data.passwordRequired) {
-        // 總管無強制密碼：直接走示範／內部登入
+        // 總管預設進入店家功能工作台；僅在 callback 明確指向 /admin 時進管理後台
+        const dest =
+          callbackUrl.startsWith("/admin") || callbackUrl.startsWith("/dashboard")
+            ? callbackUrl
+            : "/dashboard";
         const result = await signIn("demo", {
           email,
-          callbackUrl: callbackUrl.startsWith("/admin")
-            ? callbackUrl
-            : "/admin/dashboard",
+          callbackUrl: dest,
           redirect: false,
         });
         if (result?.error) {
@@ -131,7 +136,7 @@ export function LoginForm({
           setLoading(null);
           return;
         }
-        window.location.href = result?.url || "/admin/dashboard";
+        window.location.href = result?.url || dest;
         return;
       }
       setPassword("");

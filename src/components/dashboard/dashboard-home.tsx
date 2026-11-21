@@ -97,7 +97,8 @@ function DashboardHomeClient() {
       .then((data) => {
         if (cancelled) return;
         const tenants = (data.tenants || []) as TenantRecord[];
-        setOwned(isDeveloperEmail(email) ? [] : tenants);
+        // Admins keep full product tenancy so they can use storefront ops, not only /admin.
+        setOwned(tenants);
         const first = tenants[0];
         if (first && data.contents?.[0]?.profile) {
           setSettings(data.contents[0].profile);
@@ -176,10 +177,12 @@ function DashboardHomeClient() {
   return (
     <div className="space-y-6 sm:space-y-8">
       {email ? <SellerNotificationsPanel /> : null}
-      {!isAdmin && owned.length > 0 ? (
+      {owned.length > 0 ? (
         <div className="space-y-2">
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            您以店主身分登入，僅能管理綁定店家：
+            {isAdmin
+              ? "管理者模式：可同時使用店家功能工作台與總管理後台。目前可操作店家："
+              : "您以店主身分登入，僅能管理綁定店家："}
             {owned.map((tenant) => (
               <span key={tenant.id} className="ml-1 font-semibold">
                 {tenant.name}（{PLAN_TYPE_LABELS[tenant.planType]}・
@@ -251,22 +254,33 @@ function DashboardHomeClient() {
           })}
         </div>
       ) : null}
-      {!isAdmin && email && owned.length === 0 ? (
+      {email && owned.length === 0 ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          目前 Email（{email}）尚未綁定任何店家。請請總管理員於「總管理後台」開通並填入您的
-          Email，或使用示範帳號 owner.nail@demo.tw 登入。
+          {isAdmin
+            ? "目前尚無店家資料。請先至總管理後台開通店家，再開啟功能工作台操作預約／服務。"
+            : "目前 Email（" +
+              email +
+              "）尚未綁定任何店家。請請總管理員於「總管理後台」開通並填入您的 Email，或使用示範帳號 owner.nail@demo.tw 登入。"}
         </div>
       ) : null}
       {isAdmin ? (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          您是總管理員。可前往{" "}
-          <Link
-            href="/admin/dashboard"
-            className="font-semibold text-indigo-700 underline-offset-2 hover:underline"
-          >
-            總管理後台
-          </Link>{" "}
-          一鍵開通店家、暫停未付款租戶。
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
+          <p className="font-semibold">管理者雙模式</p>
+          <p className="mt-1">
+            您正在「功能工作台」（店家前台／營運功能）。需要開通租戶、看全域數據時可切換至管理後台。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/dashboard/bookings">
+              <Button as="span" className="bg-teal-700 text-white hover:bg-teal-800">
+                繼續使用預約日曆
+              </Button>
+            </Link>
+            <Link href="/admin/dashboard">
+              <Button as="span" variant="outline">
+                進入管理後台
+              </Button>
+            </Link>
+          </div>
         </div>
       ) : null}
 

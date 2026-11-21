@@ -298,10 +298,10 @@ export function AdminDashboard() {
                 as="span"
                 size="sm"
                 variant="outline"
-                className="w-full border-white/15 bg-transparent text-slate-200 hover:bg-white/10 sm:w-auto"
+                className="w-full border-teal-400/40 bg-teal-500/15 text-teal-50 hover:bg-teal-500/25 sm:w-auto"
               >
                 <LayoutDashboard className="h-4 w-4" />
-                店家後台
+                前往功能工作台
               </Button>
             </Link>
             <Button
