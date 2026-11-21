@@ -251,7 +251,7 @@ export function PricingSection({ showHeading = true, className }: Props) {
             className="bg-amber-800 text-white hover:bg-amber-900"
             onClick={() => openFoundingCheckout()}
           >
-            先註冊／免費申請創始（14 天試用＋續費 8 折）
+            註冊早鳥意向（後台開始 7 天試用＋月 9／半年 85／年 8 折）
           </Button>
         </div>
 
@@ -355,8 +355,12 @@ function PlanCard({
 }) {
   const yearly = annualPrice(plan.monthlyPrice);
   const yearlyAvg = annualMonthlyEquivalent(plan.monthlyPrice);
-  const foundingMonthly = applyFoundingDiscount(plan.monthlyPrice, true);
-  const foundingYearly = applyFoundingDiscount(yearly, true);
+  const foundingMonthly = applyFoundingDiscount(
+    plan.monthlyPrice,
+    true,
+    "monthly",
+  );
+  const foundingYearly = applyFoundingDiscount(yearly, true, "annual");
   const isAnnual = billingCycle === "annual";
   const check = "text-stone-700";
   const ring = plan.recommended
@@ -415,7 +419,7 @@ function PlanCard({
               {plan.recommended ? (
                 <>
                   {" "}
-                  ・創始年繳{" "}
+                  ・早鳥年繳{" "}
                   <span className="font-semibold tabular-nums text-rose-800">
                     {formatTwd(foundingYearly)}
                   </span>
@@ -434,15 +438,15 @@ function PlanCard({
             </p>
             {plan.recommended ? (
               <p className="mt-1.5 text-xs text-stone-500 sm:text-sm">
-                前 15 組：14 天免費，續費{" "}
+                早鳥 15 名：後台開始 7 天試用，續費{" "}
                 <span className="font-semibold tabular-nums text-rose-800">
                   {formatTwd(foundingMonthly)}
                 </span>
-                <span className="text-stone-400">／月（8 折）</span>
+                <span className="text-stone-400">／月（9 折）</span>
               </p>
             ) : (
               <p className="mt-1.5 text-xs text-stone-500 sm:text-sm">
-                先註冊可申請試用店家・一天不到 10 元・年繳{" "}
+                註冊後至後台開始試用・一天不到 10 元・年繳{" "}
                 <span className="font-semibold tabular-nums text-stone-700">
                   {formatTwd(yearly)}
                 </span>
@@ -501,8 +505,8 @@ function PlanCard({
           onClick={onSubscribe}
         >
           {foundingCta
-            ? "免費申請創始店家"
-            : "先註冊・申請試用店家"}
+            ? "註冊早鳥意向"
+            : "先註冊・後台開始試用"}
         </Button>
         <Button
           type="button"

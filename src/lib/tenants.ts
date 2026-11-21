@@ -287,9 +287,31 @@ export function isTenantBookingSuspended(
   if (!tenant) return false;
   if (tenant.status === "Suspended") return true;
   if (isTenantOnTrial(tenant, now)) return false;
+  // Registered but not yet clicked「開始免費試用七天」, and never paid
+  if (
+    !tenant.lastPaymentAt &&
+    !tenant.trialStartedAt &&
+    !tenant.trialEndsAt
+  ) {
+    return true;
+  }
   if (isWithinGracePeriod(tenant, now)) return false;
   if (isTenantExpiredByDate(tenant, now)) return true;
   return false;
+}
+
+/** 後台是否可顯示「開始免費試用七天」 */
+export function canStartTenantTrial(
+  tenant: Pick<
+    TenantRecord,
+    "lastPaymentAt" | "trialStartedAt" | "trialEndsAt" | "cancelledAt"
+  > | null | undefined,
+) {
+  if (!tenant) return false;
+  if (tenant.cancelledAt) return false;
+  if (tenant.lastPaymentAt) return false;
+  if (tenant.trialStartedAt || tenant.trialEndsAt) return false;
+  return true;
 }
 
 /** subscriptions.status：active / expired / trial */

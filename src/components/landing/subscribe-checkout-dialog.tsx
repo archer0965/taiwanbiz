@@ -29,7 +29,7 @@ export type SubscribeTarget = {
   category: PricingCategory;
   plan: PricingPlan;
   billingCycle?: PricingBillingCycle;
-  /** founding：預設勾選創始；trial：先註冊開試用（基礎／旗艦皆可） */
+  /** founding：早鳥意向註冊；trial：一般註冊（皆需後台按鈕才開始試用） */
   intent?: "founding" | "trial" | "paid";
 };
 
@@ -146,13 +146,17 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
   const foundingOn = existingFounding || isFoundingMember;
   const foundingSoldOut = Boolean(founding && !founding.available && !existingFounding);
   const foundingEligible = foundingOn && !foundingSoldOut;
-  /** 試用結束後續費價（創始＝8 折） */
-  const afterFounding = applyFoundingDiscount(listAmount, foundingEligible);
+  /** 試用結束後續費價（早鳥：月 9／年 8 折） */
+  const afterFounding = applyFoundingDiscount(
+    listAmount,
+    foundingEligible,
+    billingCycle === "annual" ? "annual" : "monthly",
+  );
   const planName = `${selected.plan.name}${
     billingCycle === "annual" ? "（年繳）" : "（月繳）"
   }`;
 
-  /** 創始申請＝14 天試用；額滿後＝3 天試用。先註冊；續費改由後台對帳 */
+  /** 早鳥意向註冊；試用需後台按鈕開通 */
   const foundingTrialSignup = foundingEligible;
 
   function assertReferralNotSelf(resolvedStoreId: string) {
@@ -220,9 +224,9 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
       if (!res.ok || !data.ok) throw new Error(data.error || "開通失敗");
       setSuccessMessage(
         data.message ||
-          (foundingTrialSignup
-            ? `創始名額開通成功（${FOUNDING_TRIAL_DAYS} 天免費試用）`
-            : `已先註冊並開通 ${STANDARD_TRIAL_DAYS} 天免費試用`),
+          `店家已註冊。請登入後台點「開始免費試用七天」開通 ${STANDARD_TRIAL_DAYS} 天全功能${
+            foundingTrialSignup ? "（開始試用時占用早鳥名額）" : ""
+          }`,
       );
       if (data.redirectUrl) {
         window.setTimeout(() => {
@@ -260,18 +264,18 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
               className="mt-1 text-lg font-bold text-slate-900"
             >
               {foundingTrialSignup
-                ? `免費申請創始店家｜${target.plan.name}`
-                : `先註冊開通｜${target.plan.name}`}
+                ? `註冊早鳥意向｜${target.plan.name}`
+                : `先註冊｜${target.plan.name}`}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               {foundingTrialSignup
-                ? `${planName} · 前 ${FOUNDING_TRIAL_DAYS} 天免費試用；之後續費終身 8 折`
-                : `${planName} · 先註冊享 ${STANDARD_TRIAL_DAYS} 天${TRIAL_LABEL}，剩餘 1 天提醒續費`}
+                ? `${planName} · 註冊後至後台點「開始免費試用七天」；早鳥終身月 9／半年 85／年 8 折`
+                : `${planName} · 註冊後至後台點「開始免費試用七天」開通 ${STANDARD_TRIAL_DAYS} 天${TRIAL_LABEL}`}
             </p>
             <p className="mt-0.5 text-xs text-slate-400">
               {foundingTrialSignup
-                ? `試用期應付 ${formatTwd(0)}｜試用後續費 ${formatTwd(afterFounding)}${billingCycle === "annual" ? "／年" : "／月"}（8 折）`
-                : `試用期應付 ${formatTwd(0)}｜試用後原價 ${formatTwd(listAmount)}${billingCycle === "annual" ? "／年" : "／月"}；忘記續費可保留網站 30 天`}
+                ? `試用需後台開通｜試用後續費約 ${formatTwd(afterFounding)}${billingCycle === "annual" ? "／年（8 折）" : "／月（9 折）"}`
+                : `試用需後台開通｜試用後原價 ${formatTwd(listAmount)}${billingCycle === "annual" ? "／年" : "／月"}；忘記續費可保留網站 30 天`}
             </p>
           </div>
           <button
@@ -293,11 +297,11 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
         >
           {foundingTrialSignup ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-              <p className="text-sm font-semibold">創始名額：{FOUNDING_FREE_LABEL}</p>
+              <p className="text-sm font-semibold">早鳥名額：{FOUNDING_FREE_LABEL}</p>
               <p className="mt-1 text-xs leading-relaxed text-amber-900/80">
-                限量前 {FOUNDING_MEMBER_LIMIT} 組。送出後先註冊並開通{" "}
+                限量前 {FOUNDING_MEMBER_LIMIT} 名（拓脈獨立計算）。送出後僅完成註冊；請登入後台點「開始免費試用七天」才開通{" "}
                 {FOUNDING_TRIAL_DAYS}{" "}
-                天免費試用（無需付款）。試用結束後請以綠界線上付款續費，每次續費終身 8 折（
+                天全功能並占用早鳥名額。續約終身月繳 9 折、半年 85 折、整年 8 折（本方案試用後約{" "}
                 {formatTwd(afterFounding)}
                 {billingCycle === "annual" ? "／年" : "／月"}
                 ）。忘記續費可保留網站 30 天。
@@ -309,12 +313,12 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
           ) : (
             <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-teal-950">
               <p className="text-sm font-semibold">
-                先註冊・{STANDARD_TRIAL_DAYS} 天免費試用
+                先註冊・後台開始 {STANDARD_TRIAL_DAYS} 天試用
               </p>
               <p className="mt-1 text-xs leading-relaxed text-teal-900/80">
-                創始名額已額滿或未勾選創始。送出後先開通帳號與前台，享{" "}
+                早鳥名額已額滿或未勾選早鳥。送出後完成帳號註冊；請至後台點「開始免費試用七天」開通{" "}
                 {STANDARD_TRIAL_DAYS}{" "}
-                天全功能試用；剩餘 1 天會提醒續費。試用後再於後台以綠界正式訂閱。忘記續費可保留網站 30 天。
+                天全功能。試用後再以綠界正式訂閱。忘記續費可保留網站 30 天。
               </p>
             </div>
           )}
@@ -415,16 +419,23 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
 
           {existingFounding ? (
             <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-              您已是創始會員：續費終身 8 折（
-              {formatTwd(applyFoundingDiscount(listAmount, true))}）
+              您已是早鳥資格：續約終身月 9／半年 85／年 8 折（本方案約{" "}
+              {formatTwd(
+                applyFoundingDiscount(
+                  listAmount,
+                  true,
+                  billingCycle === "annual" ? "annual" : "monthly",
+                ),
+              )}
+              ）
             </p>
           ) : !foundingSoldOut ? (
             foundingTrialSignup && target.intent === "founding" ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-                已套用創始名額：前 {FOUNDING_TRIAL_DAYS} 天免費，之後續費 8 折
+                早鳥意向：註冊後至後台開始 {FOUNDING_TRIAL_DAYS}{" "}
+                天試用即占用名額，續約終身月 9／半年 85／年 8 折
                 <span className="mt-0.5 block text-xs text-amber-800/80">
-                  試用應付 {formatTwd(0)}｜續費{" "}
-                  {formatTwd(afterFounding)}
+                  試用需後台開通｜續費約 {formatTwd(afterFounding)}
                   {founding
                     ? ` · 剩餘 ${founding.remaining}/${founding.limit}`
                     : ""}
@@ -439,22 +450,28 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
                   onChange={(e) => setIsFoundingMember(e.target.checked)}
                 />
                 <span>
-                  創始會員限量 {FOUNDING_MEMBER_LIMIT} 組：前{" "}
-                  {FOUNDING_TRIAL_DAYS} 天免費＋續費終身 8 折
+                  早鳥限量 {FOUNDING_MEMBER_LIMIT} 名：後台開始試用後{" "}
+                  {FOUNDING_TRIAL_DAYS} 天全功能＋終身月 9／半年 85／年 8 折
                   <span className="mt-0.5 block text-xs text-amber-800/80">
-                    勾選後先註冊開通免費試用；試用後續費{" "}
-                    {formatTwd(applyFoundingDiscount(listAmount, true))}
+                    勾選僅表示意向；名額於後台開始試用時占用。續費約{" "}
+                    {formatTwd(
+                      applyFoundingDiscount(
+                        listAmount,
+                        true,
+                        billingCycle === "annual" ? "annual" : "monthly",
+                      ),
+                    )}
                     {founding
                       ? ` · 剩餘 ${founding.remaining}/${founding.limit}`
                       : ""}
-                    。取消勾選則先註冊享 {STANDARD_TRIAL_DAYS} 天試用。
+                    。
                   </span>
                 </span>
               </label>
             )
           ) : (
             <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
-              創始名額已額滿。先註冊可享 {STANDARD_TRIAL_DAYS}{" "}
+              早鳥名額已額滿。註冊後仍可於後台開始 {STANDARD_TRIAL_DAYS}{" "}
               天免費試用，之後原價 {formatTwd(listAmount)}。
             </p>
           )}
@@ -484,8 +501,8 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
               {busy
                 ? "處理中…"
                 : foundingTrialSignup
-                  ? `免費申請創始店家（${FOUNDING_TRIAL_DAYS} 天試用）`
-                  : `先註冊・開始 ${STANDARD_TRIAL_DAYS} 天免費試用`}
+                  ? `註冊並保留早鳥意向`
+                  : `註冊店家（後台開始試用）`}
             </Button>
             <Button
               type="button"

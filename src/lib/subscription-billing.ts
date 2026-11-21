@@ -7,6 +7,7 @@ import {
 import {
   billingDatesAfterFailure,
   billingDatesAfterSuccess,
+  canStartTenantTrial,
   GRACE_PERIOD_DAYS,
   isTenantExpiredByDate,
   isTenantOnTrial,
@@ -29,9 +30,15 @@ import {
 } from "@/lib/ecpay";
 import { assertSubscriptionEcpayPayment } from "@/lib/architecture-constraints";
 import {
+  foundingPayAmount,
+  getFoundingAvailability,
+  resolveLifelongFounding,
+} from "@/lib/founding";
+import {
   applyFoundingDiscount,
-  FOUNDING_TRIAL_DAYS,
-  trialDaysFor,
+  FOUNDING_MEMBER_LIMIT,
+  STANDARD_TRIAL_DAYS,
+  START_TRIAL_BUTTON_LABEL,
   type CheckoutPaymentType,
 } from "@/lib/pricing";
 import { applyBillingCredit } from "@/lib/referral";
@@ -48,11 +55,6 @@ import {
   sendTrialConvertedEmail,
 } from "@/lib/subscription-mail";
 import { ensureStoreContentForTenant } from "@/lib/store-content-db.server";
-import {
-  getFoundingAvailability,
-  foundingPayAmount,
-  resolveLifelongFounding,
-} from "@/lib/founding";
 
 function addDaysIso(base: Date, days: number) {
   const d = new Date(base);
@@ -375,7 +377,11 @@ export async function handlePaymentWebhook(input: {
  * 前 15 組創始：占用名額並開通 14 天免費試用。
  * 試用結束後請以綠界依終身 8 折續費（不再免付費展延）。
  */
-export async function activateFoundingFreeSubscription(input: {
+/**
+ * 前台註冊店家：不開始試用、不占用早鳥名額。
+ * 需至後台點「開始免費試用七天」才開通全功能。
+ */
+export async function registerStoreAwaitingTrial(input: {
   storeId: string;
   name: string;
   ownerEmail: string;
@@ -386,48 +392,42 @@ export async function activateFoundingFreeSubscription(input: {
 }) {
   const storeId = input.storeId.trim().toLowerCase();
   const ownerEmail = input.ownerEmail.trim().toLowerCase();
-  const founding = await getFoundingAvailability();
   let tenant = await getTenantDbByStoreId(storeId);
+  const founding = await getFoundingAvailability();
 
-  if (tenant?.isFoundingMember && tenant.lastPaymentAt && !isTenantOnTrial(tenant)) {
+  if (tenant?.lastPaymentAt) {
     return {
       ok: true as const,
       alreadyActive: true as const,
       tenant,
-      message: "此店家已是創始會員（續費終身 8 折）",
-      redirectUrl: `/welcome?storeId=${encodeURIComponent(storeId)}&founding=1`,
+      founding,
+      message: "此店家已正式訂閱",
+      redirectUrl: `/dashboard/billing`,
     };
   }
-
-  if (tenant?.isFoundingMember && isTenantOnTrial(tenant)) {
+  if (tenant && isTenantOnTrial(tenant)) {
     return {
       ok: true as const,
       alreadyActive: true as const,
       alreadyOnTrial: true as const,
-      phase: "trial" as const,
       tenant,
-      trialEndsAt: tenant.trialEndsAt,
-      message: `創始試用進行中（至 ${tenant.trialEndsAt?.slice(0, 10) || "—"}）。試用結束後請以 8 折綠界續費。`,
-      redirectUrl: `/welcome?storeId=${encodeURIComponent(storeId)}&founding=1&trial=1`,
-    };
-  }
-
-  if (!tenant?.isFoundingMember && !founding.available) {
-    return {
-      ok: false as const,
-      error: "創始名額限量 10 組已額滿，無法申請",
       founding,
+      trialEndsAt: tenant.trialEndsAt,
+      message: `試用進行中（至 ${tenant.trialEndsAt?.slice(0, 10) || "—"}）`,
+      redirectUrl: `/dashboard/billing`,
     };
   }
-
-  if (tenant?.trialStartedAt && !tenant.isFoundingMember) {
+  if (tenant && !canStartTenantTrial(tenant)) {
     return {
-      ok: false as const,
-      error: "此店家已使用過試用，無法再占用創始名額",
+      ok: true as const,
+      alreadyActive: true as const,
+      tenant,
+      founding,
+      message: "店家已註冊，請至後台管理訂閱",
+      redirectUrl: `/dashboard/billing`,
     };
   }
 
-  const now = new Date();
   const planType = input.planType;
   const listAmount =
     typeof input.listAmount === "number" && input.listAmount > 0
@@ -436,9 +436,6 @@ export async function activateFoundingFreeSubscription(input: {
   const planName =
     input.planName || tenant?.planName || `拓脈訂閱-${planType}`;
   const billingMethod = input.billingMethod || "credit";
-  const trialDays = FOUNDING_TRIAL_DAYS;
-  const trialEndsAt = addDaysIso(now, trialDays);
-  const expiresAt = trialEndsAt.slice(0, 10);
 
   if (!tenant) {
     tenant = normalizeTenant({
@@ -448,18 +445,18 @@ export async function activateFoundingFreeSubscription(input: {
       planType,
       ownerEmail: ownerEmail || `owner.${storeId}@pending.local`,
       status: "Active",
-      expiresAt,
-      nextBillingDate: trialEndsAt,
-      isFoundingMember: true,
+      expiresAt: "",
+      nextBillingDate: null,
+      isFoundingMember: false,
       billingMethod,
       planName,
       listAmount,
-      trialStartedAt: now.toISOString(),
-      trialEndsAt,
+      trialStartedAt: null,
+      trialEndsAt: null,
       lastPaymentAt: null,
       cancelledAt: null,
       cancelReason: null,
-      pendingPaymentLabel: `創始＋${trialDays} 天試用`,
+      pendingPaymentLabel: `待後台「${START_TRIAL_BUTTON_LABEL}」`,
       expiryReminderForExpiresAt: null,
       expiryReminderD1ForExpiresAt: null,
       expiryReminderSentAt: null,
@@ -472,27 +469,12 @@ export async function activateFoundingFreeSubscription(input: {
       planType,
       planName,
       listAmount,
-      isFoundingMember: true,
       billingMethod,
       status: "Active",
-      expiresAt,
-      nextBillingDate: trialEndsAt,
-      trialStartedAt: now.toISOString(),
-      trialEndsAt,
-      lastPaymentAt: null,
-      cancelledAt: null,
-      cancelReason: null,
-      gracePeriodEndsAt: null,
-      pendingPaymentCode: null,
-      pendingPaymentLabel: `創始＋${trialDays} 天試用`,
-      pendingTradeNo: null,
-      pendingPaymentExpireAt: null,
-      expiryReminderForExpiresAt: null,
-      expiryReminderD1ForExpiresAt: null,
-      expiryReminderSentAt: null,
+      pendingPaymentLabel: `待後台「${START_TRIAL_BUTTON_LABEL}」`,
     });
     if (!updated) {
-      return { ok: false as const, error: "無法完成創始試用開通" };
+      return { ok: false as const, error: "無法完成店家註冊", founding };
     }
     tenant = updated;
   }
@@ -516,52 +498,67 @@ export async function activateFoundingFreeSubscription(input: {
       planType,
       planName: tenant.planName || planName,
       listAmount: tenant.listAmount,
-      isFoundingMember: true,
+      isFoundingMember: false,
       billingMethod,
     });
   } catch {
     /* ignore */
   }
 
-  const foundingAfter = await getFoundingAvailability();
-  const renewPreview = applyFoundingDiscount(listAmount, true);
   return {
     ok: true as const,
     alreadyActive: false as const,
-    phase: "trial" as const,
+    phase: "awaiting_trial" as const,
     tenant,
-    message: `創始名額開通成功：前 ${FOUNDING_TRIAL_DAYS} 天免費試用（限量前 ${founding.limit} 組；剩餘 ${foundingAfter.remaining}）。試用結束後續費終身 8 折（約 NT$ ${renewPreview.toLocaleString("zh-TW")}／期）。`,
-    redirectUrl: `/welcome?storeId=${encodeURIComponent(storeId)}&founding=1&trial=1`,
-    founding: foundingAfter,
+    founding,
+    message: `店家已註冊。請登入後台點「${START_TRIAL_BUTTON_LABEL}」開通 ${STANDARD_TRIAL_DAYS} 天全功能${
+      founding.available
+        ? `（早鳥尚餘 ${founding.remaining}/${founding.limit}，開始試用即鎖定終身月 9／半年 85／年 8 折）`
+        : "（早鳥名額已滿，續約依標準方案）"
+    }。`,
+    redirectUrl: `/login?callbackUrl=${encodeURIComponent("/dashboard/billing")}`,
   };
 }
 
+/** @deprecated 改為註冊後台按鈕開通；保留別名相容 checkout */
+export async function activateFoundingFreeSubscription(
+  input: Parameters<typeof registerStoreAwaitingTrial>[0],
+) {
+  return registerStoreAwaitingTrial(input);
+}
+
 /**
- * 新店先註冊開通免費試用（不經扣款）
- * - 創始：14 天；額滿後一般新店：3 天
- * - 每店僅能開通一次試用
+ * 後台「開始免費試用七天」：
+ * - 一律 7 天全功能
+ * - 早鳥名額尚有餘則占用（isFoundingMember），終身月 9／半年 85／年 8 折
+ * - 每店僅能開通一次
  */
 export async function startFreeTrial(input: {
   storeId: string;
-  name: string;
-  ownerEmail: string;
-  planType: TenantPlanType;
+  name?: string;
+  ownerEmail?: string;
+  planType?: TenantPlanType;
   planName?: string;
   listAmount?: number;
   isFoundingMember?: boolean;
   billingMethod?: TenantBillingMethod;
 }) {
   const storeId = input.storeId.trim().toLowerCase();
-  const ownerEmail = input.ownerEmail.trim().toLowerCase();
   let tenant = await getTenantDbByStoreId(storeId);
 
-  if (tenant?.lastPaymentAt) {
+  if (!tenant) {
+    return {
+      ok: false as const,
+      error: "找不到店家，請先完成註冊",
+    };
+  }
+  if (tenant.lastPaymentAt) {
     return {
       ok: false as const,
       error: "此店家已正式訂閱，無法再開通免費試用",
     };
   }
-  if (tenant?.trialStartedAt) {
+  if (tenant.trialStartedAt) {
     if (isTenantOnTrial(tenant)) {
       return {
         ok: true as const,
@@ -569,7 +566,7 @@ export async function startFreeTrial(input: {
         tenant,
         trialEndsAt: tenant.trialEndsAt,
         message: "此店家已在試用中",
-        redirectUrl: `/welcome?storeId=${encodeURIComponent(storeId)}&trial=1`,
+        redirectUrl: `/dashboard/billing`,
       };
     }
     return {
@@ -578,79 +575,56 @@ export async function startFreeTrial(input: {
     };
   }
 
+  const founding = await getFoundingAvailability();
+  const claimFounding =
+    Boolean(tenant.isFoundingMember) ||
+    (founding.available && input.isFoundingMember !== false);
   const now = new Date();
-  const isFoundingMember = resolveLifelongFounding(
-    tenant,
-    Boolean(input.isFoundingMember),
-  );
-  const days = trialDaysFor(isFoundingMember);
+  const days = STANDARD_TRIAL_DAYS;
   const trialEndsAt = addDaysIso(now, days);
   const expiresAt = trialEndsAt.slice(0, 10);
-  const planType = input.planType;
+  const planType = input.planType || tenant.planType;
   const listAmount =
     typeof input.listAmount === "number" && input.listAmount > 0
       ? Math.round(input.listAmount)
-      : planMonthlyAmount(planType);
-  const billingMethod = input.billingMethod || "credit";
+      : tenant.listAmount || planMonthlyAmount(planType);
+  const billingMethod = input.billingMethod || tenant.billingMethod || "credit";
   const planName =
-    input.planName || tenant?.planName || `拓脈訂閱-${planType}`;
+    input.planName || tenant.planName || `拓脈訂閱-${planType}`;
+  const ownerEmail =
+    (input.ownerEmail || tenant.ownerEmail || "").trim().toLowerCase();
 
-  if (!tenant) {
-    tenant = normalizeTenant({
-      storeId,
-      slug: storeId,
-      name: input.name.trim() || storeId,
-      planType,
-      ownerEmail: ownerEmail || `owner.${storeId}@pending.local`,
-      status: "Active",
-      expiresAt,
-      nextBillingDate: trialEndsAt,
-      isFoundingMember,
-      billingMethod,
-      planName,
-      listAmount,
-      trialStartedAt: now.toISOString(),
-      trialEndsAt,
-      lastPaymentAt: null,
-      cancelledAt: null,
-      cancelReason: null,
-      pendingPaymentLabel: `先註冊・${days} 天試用`,
-      expiryReminderForExpiresAt: null,
-      expiryReminderD1ForExpiresAt: null,
-      expiryReminderSentAt: null,
-    });
-    tenant = await upsertTenantDb(tenant);
-  } else {
-    const updated = await patchTenantDb(storeId, {
-      name: input.name.trim() || tenant.name,
-      ownerEmail: ownerEmail || tenant.ownerEmail,
-      planType,
-      planName,
-      listAmount,
-      isFoundingMember,
-      billingMethod,
-      status: "Active",
-      expiresAt,
-      nextBillingDate: trialEndsAt,
-      trialStartedAt: now.toISOString(),
-      trialEndsAt,
-      lastPaymentAt: null,
-      cancelledAt: null,
-      cancelReason: null,
-      gracePeriodEndsAt: null,
-      pendingPaymentCode: null,
-      pendingPaymentLabel: `先註冊・${days} 天試用`,
-      pendingTradeNo: null,
-      pendingPaymentExpireAt: null,
-      expiryReminderForExpiresAt: null,
-      expiryReminderD1ForExpiresAt: null,
-      expiryReminderSentAt: null,
-    });
-    if (!updated) {
-      return { ok: false as const, error: "無法開通試用" };
-    }
-    tenant = updated;
+  const updated = await patchTenantDb(storeId, {
+    name: input.name?.trim() || tenant.name,
+    ownerEmail: ownerEmail || tenant.ownerEmail,
+    planType,
+    planName,
+    listAmount,
+    isFoundingMember: claimFounding,
+    billingMethod,
+    status: "Active",
+    expiresAt,
+    nextBillingDate: trialEndsAt,
+    trialStartedAt: now.toISOString(),
+    trialEndsAt,
+    lastPaymentAt: null,
+    cancelledAt: null,
+    cancelReason: null,
+    gracePeriodEndsAt: null,
+    pendingPaymentCode: null,
+    pendingPaymentLabel: claimFounding
+      ? `早鳥＋${days} 天試用`
+      : `${START_TRIAL_BUTTON_LABEL}`,
+    pendingTradeNo: null,
+    pendingPaymentExpireAt: null,
+    expiryReminderForExpiresAt: null,
+    expiryReminderD1ForExpiresAt: null,
+    expiryReminderSentAt: null,
+  });
+  if (!updated) {
+    return { ok: false as const, error: "無法開通試用" };
   }
+  tenant = updated;
 
   await ensureStoreContentForTenant(storeId);
 
@@ -661,7 +635,7 @@ export async function startFreeTrial(input: {
       storeId,
       planType,
       trialEndsAt,
-      isFoundingMember,
+      isFoundingMember: claimFounding,
       listAmount,
     });
   } catch (error) {
@@ -675,22 +649,27 @@ export async function startFreeTrial(input: {
       planType,
       planName,
       listAmount,
-      isFoundingMember,
+      isFoundingMember: claimFounding,
       trialEndsAt,
     });
   } catch (error) {
     console.error("[admin-trial-mail] failed", storeId, error);
   }
 
+  const foundingAfter = await getFoundingAvailability();
+  const renewPreview = applyFoundingDiscount(listAmount, claimFounding, "monthly");
+
   return {
     ok: true as const,
     alreadyOnTrial: false as const,
     tenant,
     trialEndsAt,
-    message: isFoundingMember
-      ? `已先註冊並開通 ${days} 天創始免費試用，期滿前請以 8 折完成正式訂閱`
-      : `已先註冊並開通 ${days} 天免費試用，剩餘 1 天會提醒續費；期滿前請完成正式訂閱`,
-    redirectUrl: `/welcome?storeId=${encodeURIComponent(storeId)}&trial=1`,
+    earlyBird: claimFounding,
+    founding: foundingAfter,
+    message: claimFounding
+      ? `已開通 ${days} 天全功能試用，並取得早鳥資格（終身月繳 9 折／半年 85 折／年繳 8 折；月繳約 NT$ ${renewPreview.toLocaleString("zh-TW")}）。早鳥剩餘 ${foundingAfter.remaining}/${FOUNDING_MEMBER_LIMIT}。`
+      : `已開通 ${days} 天全功能試用。早鳥名額已滿，續約依標準方案計價。`,
+    redirectUrl: `/dashboard/billing`,
   };
 }
 

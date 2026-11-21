@@ -74,7 +74,7 @@ export function FoundingPromoFloat() {
     <div
       className="pointer-events-none fixed inset-x-0 top-14 z-[60] flex justify-center px-3 pt-2 sm:top-16 sm:px-4"
       role="region"
-      aria-label="前十組創始優惠"
+      aria-label="早鳥優惠"
     >
       <div className="pointer-events-auto w-full max-w-3xl animate-fade-in-up rounded-2xl border border-[#c4a090]/55 bg-[#1a1512] text-[#f7efe8] shadow-[0_18px_50px_rgba(20,14,10,0.55)]">
         <div className="flex items-start gap-3 px-4 py-3 sm:px-5 sm:py-3.5">
@@ -103,20 +103,20 @@ export function FoundingPromoFloat() {
               ))}
             </ul>
             <p className="mt-1 text-[11px] leading-relaxed text-[#f7efe8]/90 sm:hidden">
-              14 天全功能試用・續費終身 8 折・綠界線上付款・忘記續費可保留 30 天
+              後台開始 7 天試用・終身月 9／半年 85／年 8 折・名額本站獨立計算
             </p>
             {!soldOut ? (
               <Link
                 href="/?founding=1#pricing"
                 className="mt-2 inline-flex text-xs font-semibold text-[#c4a090] underline-offset-2 hover:underline sm:text-sm"
               >
-                立即鎖定創始名額
+                註冊並至後台開始試用
               </Link>
             ) : null}
           </div>
           <button
             type="button"
-            aria-label="關閉創始優惠提示"
+            aria-label="關閉早鳥優惠提示"
             className="shrink-0 rounded-lg p-1.5 text-[#e8d5c8]/70 hover:bg-white/10 hover:text-[#f0e6de]"
             onClick={() => {
               try {

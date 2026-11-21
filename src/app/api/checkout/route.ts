@@ -11,8 +11,7 @@ import {
 import { normalizeReferralCode } from "@/lib/referral";
 import { attachPendingReferral } from "@/lib/referral-db.server";
 import {
-  activateFoundingFreeSubscription,
-  startFreeTrial,
+  registerStoreAwaitingTrial,
   startSubscriptionCheckout,
 } from "@/lib/subscription-billing";
 import { getTenantDbByStoreId } from "@/lib/tenant-db.server";
@@ -39,9 +38,9 @@ type CheckoutBody = {
   planType?: TenantPlanType;
   plan_type?: TenantPlanType;
   renewalToken?: string;
-  /** true：開通免費試用（不經綠界扣款） */
+  /** true：註冊店家（不開始試用；需後台按鈕開通） */
   startTrial?: boolean;
-  /** true：前 15 組創始開通（14 天免費試用；之後續費 8 折） */
+  /** true：註冊並提示早鳥（名額於後台開始試用時占用） */
   activateFoundingFree?: boolean;
   /** 新帳號綁定登入密碼 */
   password?: string;
@@ -99,7 +98,7 @@ function slugifyStoreId(input: string) {
 
 /**
  * 訂閱結帳入口：
- * - 免費試用／創始開通：不經綠界
+ * - 註冊店家（含早鳥意向）：不經綠界、不開始試用；後台按鈕才開通
  * - 正式付費：綠界（period／credit／atm／cvs）
  */
 export async function POST(request: Request) {
@@ -146,22 +145,12 @@ export async function POST(request: Request) {
     Boolean(body.activateFoundingFree) ||
     (wantTrial && wantFounding && founding.available);
 
-  // 前 15 組創始：占用名額＋14 天免費試用
-  if (wantFoundingFree && wantFounding) {
+  // 註冊店家（早鳥意向或一般試用意向）：不開始試用
+  if (wantFoundingFree || wantTrial) {
     if (!ownerEmail) {
       return NextResponse.json(
-        { error: "免付費開通需填寫負責人 Email" },
+        { error: "註冊需填寫負責人 Email" },
         { status: 400 },
-      );
-    }
-    const alreadyFounding = Boolean(tenant?.isFoundingMember);
-    if (!alreadyFounding && !founding.available) {
-      return NextResponse.json(
-        {
-          error: "創始名額限量 10 組已額滿，無法申請",
-          founding,
-        },
-        { status: 409 },
       );
     }
     const pwd = await bindOwnerPasswordIfNeeded({
@@ -172,7 +161,7 @@ export async function POST(request: Request) {
     if (!pwd.ok) {
       return NextResponse.json({ error: pwd.error }, { status: 400 });
     }
-    const free = await activateFoundingFreeSubscription({
+    const registered = await registerStoreAwaitingTrial({
       storeId,
       name: storeName,
       ownerEmail,
@@ -181,10 +170,10 @@ export async function POST(request: Request) {
       listAmount: Math.round(amountRaw),
       billingMethod: "credit" as TenantBillingMethod,
     });
-    if (!free.ok) {
+    if (!registered.ok) {
       return NextResponse.json(
-        { error: free.error, founding: free.founding },
-        { status: free.error?.includes("額滿") ? 409 : 400 },
+        { error: registered.error, founding: registered.founding },
+        { status: 400 },
       );
     }
 
@@ -205,89 +194,22 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      mode: "founding_free" as const,
+      mode: "awaiting_trial" as const,
       message: referralPending
-        ? `${free.message}（已綁定推薦碼）`
-        : free.message,
+        ? `${registered.message}（已綁定推薦碼）`
+        : registered.message,
       storeId,
       planName,
       planType,
-      isFoundingMember: true,
-      listAmount: free.tenant.listAmount,
+      isFoundingMember: registered.tenant.isFoundingMember,
+      listAmount: registered.tenant.listAmount,
       amount: 0,
       payAmount: 0,
       referralPending,
-      redirectUrl: free.redirectUrl,
-      founding: free.founding,
-      tenant: free.tenant,
-      schema: toTenantDbRow(free.tenant),
-    });
-  }
-
-  // 免費試用：新店或尚未用過試用／尚未付款（非創始）
-  if (wantTrial) {
-    if (!ownerEmail) {
-      return NextResponse.json(
-        { error: "開通試用需填寫負責人 Email" },
-        { status: 400 },
-      );
-    }
-    const pwd = await bindOwnerPasswordIfNeeded({
-      email: ownerEmail,
-      password: body.password,
-      confirmPassword: body.confirmPassword,
-    });
-    if (!pwd.ok) {
-      return NextResponse.json({ error: pwd.error }, { status: 400 });
-    }
-    const trial = await startFreeTrial({
-      storeId,
-      name: storeName,
-      ownerEmail,
-      planType,
-      planName,
-      listAmount: Math.round(amountRaw),
-      isFoundingMember: false,
-      billingMethod: "credit" as TenantBillingMethod,
-    });
-    if (!trial.ok) {
-      return NextResponse.json({ error: trial.error }, { status: 400 });
-    }
-
-    const referralCode = normalizeReferralCode(String(body.referralCode || ""));
-    let referralPending = false;
-    if (referralCode) {
-      const attached = await attachPendingReferral({
-        codeRaw: referralCode,
-        referredStoreId: storeId,
-        referredEmail: ownerEmail,
-      });
-      if (!attached.ok) {
-        return NextResponse.json({ error: attached.error }, { status: 400 });
-      }
-      referralPending = true;
-    }
-
-    const foundingAfter = await getFoundingAvailability();
-    return NextResponse.json({
-      ok: true,
-      mode: "trial" as const,
-      message: referralPending
-        ? `${trial.message}（已綁定推薦碼；好友完成首次付費後獎勵才會生效）`
-        : trial.message,
-      storeId,
-      planName,
-      planType,
-      isFoundingMember: trial.tenant.isFoundingMember,
-      listAmount: trial.tenant.listAmount,
-      amount: 0,
-      trialEndsAt: trial.trialEndsAt,
-      alreadyOnTrial: trial.alreadyOnTrial,
-      referralPending,
-      redirectUrl: trial.redirectUrl,
-      founding: foundingAfter,
-      tenant: trial.tenant,
-      schema: toTenantDbRow(trial.tenant),
+      redirectUrl: registered.redirectUrl,
+      founding: registered.founding ?? founding,
+      tenant: registered.tenant,
+      schema: toTenantDbRow(registered.tenant),
     });
   }
 

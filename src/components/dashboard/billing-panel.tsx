@@ -12,7 +12,11 @@ import { Toast } from "@/components/ui/toast";
 import { EcpaySubscriptionPayForm } from "@/components/billing/ecpay-subscription-pay-form";
 import { SellerNotificationsPanel } from "@/components/dashboard/seller-notifications-panel";
 import { ARCHITECTURE } from "@/lib/architecture-constraints";
-import { applyFoundingDiscount, formatTwd } from "@/lib/pricing";
+import {
+  applyFoundingDiscount,
+  formatTwd,
+  START_TRIAL_BUTTON_LABEL,
+} from "@/lib/pricing";
 import {
   REFERRAL_COPY,
   REFERRAL_CREDIT_PER_CYCLE_CAP,
@@ -22,6 +26,7 @@ import {
 } from "@/lib/referral";
 import { isDeveloperEmail } from "@/lib/roles";
 import {
+  canStartTenantTrial,
   daysUntilExpiry,
   formatSellerSubscriptionStatus,
   isTenantBookingSuspended,
@@ -58,10 +63,38 @@ export function BillingPanel() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [trialBusyId, setTrialBusyId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [toastOpen, setToastOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const closeToast = useCallback(() => setToastOpen(false), []);
+
+  async function startTrial(storeId: string) {
+    setTrialBusyId(storeId);
+    try {
+      const res = await fetch("/api/trial/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "開通失敗");
+      }
+      setToastMsg(data.message || "試用已開通");
+      setToastOpen(true);
+      await load();
+    } catch (err) {
+      setToastMsg(err instanceof Error ? err.message : "開通失敗");
+      setToastOpen(true);
+    } finally {
+      setTrialBusyId(null);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,6 +201,7 @@ export function BillingPanel() {
           const cancelled = Boolean(tenant.cancelledAt);
           const confirming = confirmId === tenant.storeId;
           const onTrial = isTenantOnTrial(tenant);
+          const canTrial = canStartTenantTrial(tenant);
           const bookingPaused = isTenantBookingSuspended(tenant);
           const life = resolveSubscriptionLifecycleStatus(tenant);
           const daysLeft = daysUntilExpiry(tenant);
@@ -212,7 +246,27 @@ export function BillingPanel() {
                     </p>
                   ) : null}
                 </div>
-                {bookingPaused ? (
+                {canTrial ? (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-950">
+                    <p className="font-medium">{START_TRIAL_BUTTON_LABEL}</p>
+                    <p className="mt-1 text-xs text-amber-900/80">
+                      註冊不會自動開始試用。點下方按鈕後，本站立即開通全功能並倒數
+                      7 天；早鳥名額（本站獨立 15 名）於開始試用時占用，終身月繳
+                      9 折、半年 85 折、整年 8 折。
+                    </p>
+                    <Button
+                      type="button"
+                      className="mt-3 bg-amber-800 text-amber-50 hover:bg-amber-900"
+                      disabled={trialBusyId === tenant.storeId}
+                      onClick={() => void startTrial(tenant.storeId)}
+                    >
+                      {trialBusyId === tenant.storeId
+                        ? "開通中…"
+                        : START_TRIAL_BUTTON_LABEL}
+                    </Button>
+                  </div>
+                ) : null}
+                {bookingPaused && !canTrial ? (
                   <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-950">
                     <p className="font-medium">
                       系統維護／方案已到期暫停預約
@@ -231,7 +285,7 @@ export function BillingPanel() {
                       方案將於 {daysLeft} 天內到期（{tenant.expiresAt}）
                     </p>
                     <p className="mt-1 text-xs text-amber-900/80">
-                      創始試用／正式訂閱：到期前 3 天與前 1 天提醒；一般 3 天試用僅於剩餘 1 天提醒。若已續費則略過。忘記續費可保留網站 30 天，其後才暫停。
+                      試用／正式訂閱：到期前 3 天與前 1 天提醒。若已續費則略過。忘記續費可保留網站 30 天，其後才暫停。
                     </p>
                   </div>
                 ) : null}
@@ -265,10 +319,10 @@ export function BillingPanel() {
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-slate-500">創始會員</dt>
+                    <dt className="text-slate-500">早鳥資格</dt>
                     <dd className="font-medium">
                       {tenant.isFoundingMember
-                        ? "是（14 天試用後續費終身 8 折）"
+                        ? "是（終身月 9／半年 85／年 8 折）"
                         : "否"}
                     </dd>
                   </div>
@@ -412,7 +466,7 @@ export function BillingPanel() {
                     </p>
                     <p className="mt-1 text-xs text-teal-900/80">
                       正式訂閱應付約 {formatTwd(payAmount)}
-                      {tenant.isFoundingMember ? "（創始 8 折）" : ""}
+                      {tenant.isFoundingMember ? "（早鳥折扣）" : ""}
                       。支援信用卡、定期定額、ATM、超商代碼。
                     </p>
                     <div className="mt-3 rounded-xl border border-teal-100 bg-white p-3">
