@@ -1,0 +1,257 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --brand-indigo: #4f46e5;
+  --brand-emerald: #059669;
+  --surface: #ffffff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-noto-sans-tc);
+  --font-display: var(--font-cormorant), var(--font-outfit);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-noto-sans-tc), "Noto Sans TC", sans-serif;
+  overflow-x: clip;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Next/Image fill 不受影響；一般圖片避免撐破版面 */
+img:not([data-nimg]),
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 橫向導覽／表格：觸控滑動更順、不連帶整頁左右晃 */
+.scroll-x-touch {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.scroll-y-touch {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+@media (pointer: coarse) {
+  .touch-target {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatSoft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s ease both;
+}
+
+.animate-fade-in-up-delay {
+  animation: fadeInUp 0.8s ease 0.15s both;
+}
+
+.animate-fade-in-up-delay-2 {
+  animation: fadeInUp 0.85s ease 0.28s both;
+}
+
+.animate-float {
+  animation: floatSoft 5s ease-in-out infinite;
+}
+
+.scratch-surface {
+  background: linear-gradient(
+    120deg,
+    #94a3b8 0%,
+    #cbd5e1 35%,
+    #64748b 50%,
+    #cbd5e1 65%,
+    #94a3b8 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.4s linear infinite;
+}
+
+.hero-grid {
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.35), transparent 35%),
+    radial-gradient(circle at 80% 10%, rgba(16, 185, 129, 0.28), transparent 30%),
+    radial-gradient(circle at 50% 80%, rgba(99, 102, 241, 0.18), transparent 40%),
+    linear-gradient(180deg, #020617 0%, #0f172a 55%, #111827 100%);
+}
+
+/* Landing：美業莫蘭迪／奶茶 Warm Minimalist */
+.lp-beauty {
+  --lp-cream: #f7f1ea;
+  --lp-mist: #efe6dc;
+  --lp-surface: #faf6f1;
+  --lp-ink: #2a221c;
+  --lp-muted: #7a6d63;
+  --lp-line: #e2d6ca;
+  --lp-accent: #a67c6d;
+  --lp-accent-deep: #8a6356;
+  --lp-accent-soft: #eadfd6;
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(196, 160, 144, 0.18), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 0%, rgba(214, 196, 178, 0.35), transparent 50%),
+    var(--lp-mist);
+  color: var(--lp-ink);
+}
+
+.lp-hero-ken {
+  animation: lpKenBurns 18s ease-in-out infinite alternate;
+}
+
+.lp-hero-grain {
+  opacity: 0.18;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.08) 0.5px, transparent 0.5px),
+    radial-gradient(rgba(0, 0, 0, 0.08) 0.5px, transparent 0.5px);
+  background-size: 3px 3px, 5px 5px;
+  background-position: 0 0, 1px 2px;
+  pointer-events: none;
+}
+
+.lp-demo-panel {
+  animation: fadeInUp 0.55s ease both;
+}
+
+.lp-soft-glow {
+  box-shadow: 0 0 0 1px rgba(166, 124, 109, 0.25), 0 10px 28px rgba(166, 124, 109, 0.12);
+}
+
+.lp-demo-lock {
+  animation: fadeIn 0.45s ease both;
+}
+
+.lp-feature-item {
+  animation: fadeInUp 0.6s ease both;
+}
+
+@keyframes lpKenBurns {
+  from {
+    transform: scale(1.05) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.12) translate3d(-1.5%, -1%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-fade-in-up-delay,
+  .animate-fade-in-up-delay-2,
+  .animate-float,
+  .scratch-surface,
+  .lp-hero-ken,
+  .lp-demo-panel,
+  .lp-feature-item,
+  .lp-demo-lock {
+    animation: none !important;
+  }
+}
+
+/* 服務確認單／報價單：A4 列印 */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+
+  .quotation-toolbar {
+    display: none !important;
+  }
+
+  .quotation-sheet {
+    width: 100% !important;
+    max-width: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+}
