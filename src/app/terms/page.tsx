@@ -39,7 +39,7 @@ export default function TermsPage() {
           <li>
             <span className="font-semibold text-white">品牌導流旗艦版</span>
             ：含基礎版全部能力，另含專屬品牌形象微型官網（自訂風格／作品與價目表）與手機互動刮刮樂（熟客留客與
-            LINE 導流）。創始名額限量前 15 組：含 14 天免費試用，之後續費終身 8 折。
+            LINE 導流）。早鳥名額限量前 15 組：含 7 天免費試用，之後續費享主站早鳥折扣；特約店家為 14 天試用。
           </li>
         </ol>
         <p>

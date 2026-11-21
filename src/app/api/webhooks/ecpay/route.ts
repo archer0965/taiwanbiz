@@ -111,6 +111,24 @@ export async function POST(request: Request) {
   const isBookingDeposit =
     payload.CustomField2 === "booking_deposit" || tradeNo.startsWith("BD");
 
+  if (!success) {
+    const { reportToHub } = await import("@/lib/novaos-telemetry");
+    void reportToHub({
+      kind: "payment_failure",
+      severity: "warn",
+      message: `ecpay_rtn_${rtn}`,
+      meta: { storeId, tradeNo, isBookingDeposit },
+    });
+  } else {
+    const { reportToHub } = await import("@/lib/novaos-telemetry");
+    void reportToHub({
+      kind: "payment_success",
+      severity: "info",
+      message: isBookingDeposit ? "booking_deposit_paid" : "subscription_paid",
+      meta: { storeId, tradeNo },
+    });
+  }
+
   // 預約訂金（綠界／LINE Pay 等）
   if (isBookingDeposit) {
     const bookingId = payload.CustomField3 || "";

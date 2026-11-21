@@ -10,8 +10,9 @@ export const ARCHITECTURE = {
   selfServeOnly: true,
   billingMethod: "ecpay" as const,
   plans: {
-    starter: { id: "starter", monthly: 299, annual: 2990 },
-    flagship: { id: "growth", monthly: 499, annual: 4990 },
+    /** Annual = monthly × 12 — hub authority (paycheck.com.de) */
+    starter: { id: "starter", monthly: 299, annual: 3588 },
+    flagship: { id: "growth", monthly: 499, annual: 5988 },
   },
 } as const;
 
