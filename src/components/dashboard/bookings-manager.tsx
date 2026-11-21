@@ -20,15 +20,26 @@ import { cn } from "@/lib/utils";
 import {
   Ban,
   CalendarRange,
+  Check,
   Lock,
   Plus,
+  Search,
   Unlock,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type BookingRow = BookingRecord & { blacklisted?: boolean };
 type BlockedSlot = { date: string; time: string };
-type ViewMode = "day" | "week" | "list";
+type ViewMode = "day" | "week" | "month" | "list";
+
+const STATUS_COLOR: Record<BookingStatus, string> = {
+  pending_deposit: "border-amber-300 bg-amber-50 text-amber-950",
+  confirmed: "border-sky-300 bg-sky-50 text-sky-950",
+  completed: "border-emerald-300 bg-emerald-50 text-emerald-950",
+  cancelled: "border-stone-300 bg-stone-100 text-stone-500 line-through",
+  no_show: "border-rose-300 bg-rose-50 text-rose-950",
+};
 
 const DAY_START = 9 * 60;
 const DAY_END = 21 * 60;
@@ -56,6 +67,20 @@ function weekFromDate(dateYmd: string) {
   const from = addDaysYmd(dateYmd, mondayOffset);
   const days = Array.from({ length: 7 }, (_, i) => addDaysYmd(from, i));
   return { from, to: days[6], days };
+}
+
+function monthFromDate(dateYmd: string) {
+  const [y, m] = dateYmd.split("-").map(Number);
+  const first = `${y}-${String(m).padStart(2, "0")}-01`;
+  const lastDay = new Date(y, m, 0).getDate();
+  const to = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  const days = Array.from({ length: lastDay }, (_, i) =>
+    addDaysYmd(first, i),
+  );
+  // Pad leading blanks so Monday-first calendar aligns
+  const firstDow = new Date(`${first}T12:00:00+08:00`).getUTCDay();
+  const mondayPad = firstDow === 0 ? 6 : firstDow - 1;
+  return { from: first, to, days, mondayPad, year: y, month: m };
 }
 
 function timeSlots() {
@@ -99,7 +124,11 @@ function BookingsClient() {
   const [manualNote, setManualNote] = useState("");
 
   const week = useMemo(() => weekFromDate(date), [date]);
+  const month = useMemo(() => monthFromDate(date), [date]);
   const slots = useMemo(() => timeSlots(), []);
+  const [monthStatsBookings, setMonthStatsBookings] = useState<BookingRow[]>(
+    [],
+  );
 
   const load = useCallback(async () => {
     if (!slug) {
@@ -113,7 +142,9 @@ function BookingsClient() {
       const qs =
         view === "week"
           ? `from=${encodeURIComponent(week.from)}&to=${encodeURIComponent(week.to)}`
-          : `date=${encodeURIComponent(date)}`;
+          : view === "month" || view === "list"
+            ? `from=${encodeURIComponent(month.from)}&to=${encodeURIComponent(month.to)}`
+            : `date=${encodeURIComponent(date)}`;
       const res = await fetch(
         `/api/stores/${encodeURIComponent(slug)}/bookings?${qs}`,
         { cache: "no-store" },
@@ -134,17 +165,67 @@ function BookingsClient() {
       setProductNames(
         (data.products || []).map((p) => p.name || "").filter(Boolean),
       );
+      if (view === "month" || view === "list") {
+        setMonthStatsBookings(data.bookings || []);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "載入失敗");
       setBookings([]);
     } finally {
       setLoading(false);
     }
-  }, [slug, date, view, week.from, week.to]);
+  }, [slug, date, view, week.from, week.to, month.from, month.to]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Keep month stats fresh even when viewing day/week
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const qs = `from=${encodeURIComponent(month.from)}&to=${encodeURIComponent(month.to)}`;
+        const res = await fetch(
+          `/api/stores/${encodeURIComponent(slug)}/bookings?${qs}`,
+          { cache: "no-store" },
+        );
+        const data = (await res.json()) as { bookings?: BookingRow[] };
+        if (!cancelled && res.ok) setMonthStatsBookings(data.bookings || []);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, month.from, month.to]);
+
+  const opsStats = useMemo(() => {
+    const today = todayYmdTaipei();
+    let todayCount = 0;
+    const serviceCount = new Map<string, number>();
+    for (const b of monthStatsBookings) {
+      if ((b.status || "confirmed") === "cancelled") continue;
+      const parts = toTaipeiDateAndTime(b.startsAt);
+      if (parts?.date === today) todayCount += 1;
+      const names = String(b.serviceName || "")
+        .split(/[、,/|]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const n of names.length ? names : ["未命名服務"]) {
+        serviceCount.set(n, (serviceCount.get(n) || 0) + 1);
+      }
+    }
+    const popular = [...serviceCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    const activeMonth = monthStatsBookings.filter(
+      (b) => (b.status || "confirmed") !== "cancelled",
+    ).length;
+    return { todayCount, activeMonth, popular };
+  }, [monthStatsBookings]);
 
   function toast(msg: string) {
     setToastMsg(msg);
@@ -269,9 +350,11 @@ function BookingsClient() {
 
   const dayColumns = view === "week" ? week.days : [date];
 
-  function bookingsFor(dateYmd: string, timeHm: string) {
+  function bookingsFor(dateYmd: string, timeHm: string, includeCancelled = false) {
     return bookings.filter((b) => {
-      if ((b.status || "confirmed") === "cancelled") return false;
+      if (!includeCancelled && (b.status || "confirmed") === "cancelled") {
+        return false;
+      }
       const parts = toTaipeiDateAndTime(b.startsAt);
       if (!parts || parts.date !== dateYmd) return false;
       const start = parseHm(parts.time);
@@ -279,6 +362,22 @@ function BookingsClient() {
       const slot = parseHm(timeHm);
       return slot >= start && slot < end;
     });
+  }
+
+  function bookingsOnDay(dateYmd: string) {
+    return bookings.filter((b) => {
+      const parts = toTaipeiDateAndTime(b.startsAt);
+      return parts?.date === dateYmd;
+    });
+  }
+
+  function statusClass(b: BookingRow) {
+    const status = (b.status || "confirmed") as BookingStatus;
+    if (STATUS_COLOR[status]) return STATUS_COLOR[status];
+    if (b.source === "walk_in" || b.source === "manual") {
+      return "border-violet-300 bg-violet-50 text-violet-950";
+    }
+    return STATUS_COLOR.confirmed;
   }
 
   function isBlocked(dateYmd: string, timeHm: string) {
@@ -298,7 +397,7 @@ function BookingsClient() {
             預約時間軸日曆
           </h1>
           <p className="mt-1 text-sm text-stone-500">
-            每日／每週時間軸檢視空檔與預約；可快速新增現場客或一鍵封鎖時段。
+            日／週／月行事曆與列表；可快速新增現場客、一鍵改狀態或封鎖時段。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -313,13 +412,54 @@ function BookingsClient() {
         </div>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-stone-500">今日預約數</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-stone-900">
+              {opsStats.todayCount}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-stone-500">本月預約總數</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-stone-900">
+              {opsStats.activeMonth}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-stone-500">熱門服務項目</p>
+            <ul className="mt-2 space-y-1">
+              {opsStats.popular.length === 0 ? (
+                <li className="text-sm text-stone-400">尚無資料</li>
+              ) : (
+                opsStats.popular.map(([name, count]) => (
+                  <li
+                    key={name}
+                    className="flex items-center justify-between gap-2 text-sm text-stone-700"
+                  >
+                    <span className="truncate">{name}</span>
+                    <span className="tabular-nums text-stone-500">{count}</span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <CalendarRange className="h-4 w-4" />
             檢視與日期
           </CardTitle>
-          <CardDescription>台北時區 · 30 分鐘格線</CardDescription>
+          <CardDescription>
+            台北時區 · 色彩：待訂金／已確認／已完成／已取消
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div>
@@ -332,11 +472,12 @@ function BookingsClient() {
               className="mt-1.5 w-44"
             />
           </div>
-          <div className="flex rounded-xl border border-stone-200 p-1">
+          <div className="flex flex-wrap rounded-xl border border-stone-200 p-1">
             {(
               [
-                ["day", "每日"],
-                ["week", "每週"],
+                ["day", "日"],
+                ["week", "週"],
+                ["month", "月"],
                 ["list", "列表"],
               ] as const
             ).map(([id, label]) => (
@@ -360,6 +501,25 @@ function BookingsClient() {
               {week.from} ～ {week.to}
             </p>
           ) : null}
+          {view === "month" || view === "list" ? (
+            <p className="text-xs text-stone-500">
+              {month.from} ～ {month.to}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2 text-[11px] text-stone-500">
+            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5">
+              待訂金
+            </span>
+            <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5">
+              已確認
+            </span>
+            <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5">
+              已完成
+            </span>
+            <span className="rounded-full border border-stone-300 bg-stone-100 px-2 py-0.5">
+              已取消
+            </span>
+          </div>
         </CardContent>
       </Card>
 
@@ -379,6 +539,68 @@ function BookingsClient() {
           onStatus={(id, s) => void updateStatus(id, s)}
           onConfirmDeposit={(id) => void confirmDeposit(id)}
         />
+      ) : view === "month" ? (
+        <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm sm:p-4">
+          <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-stone-500">
+            {["一", "二", "三", "四", "五", "六", "日"].map((d) => (
+              <div key={d} className="py-1">
+                {d}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: month.mondayPad }).map((_, i) => (
+              <div key={`pad-${i}`} className="min-h-[88px] rounded-lg bg-stone-50/50" />
+            ))}
+            {month.days.map((d) => {
+              const dayBookings = bookingsOnDay(d);
+              const isToday = d === todayYmdTaipei();
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => {
+                    setDate(d);
+                    setView("day");
+                  }}
+                  className={cn(
+                    "min-h-[88px] rounded-lg border p-1.5 text-left transition hover:border-teal-400 hover:bg-teal-50/40",
+                    isToday
+                      ? "border-teal-500 bg-teal-50/50"
+                      : "border-stone-100 bg-white",
+                  )}
+                >
+                  <p
+                    className={cn(
+                      "text-xs font-semibold",
+                      isToday ? "text-teal-800" : "text-stone-700",
+                    )}
+                  >
+                    {Number(d.slice(8))}
+                  </p>
+                  <div className="mt-1 space-y-0.5">
+                    {dayBookings.slice(0, 3).map((b) => (
+                      <p
+                        key={b.id}
+                        className={cn(
+                          "truncate rounded px-1 py-0.5 text-[10px] leading-tight",
+                          statusClass(b),
+                        )}
+                      >
+                        {b.customerName}
+                      </p>
+                    ))}
+                    {dayBookings.length > 3 ? (
+                      <p className="text-[10px] text-stone-400">
+                        +{dayBookings.length - 3}
+                      </p>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-stone-200 bg-white shadow-sm">
           <div
@@ -434,16 +656,10 @@ function BookingsClient() {
                             key={b.id}
                             className={cn(
                               "absolute inset-x-0.5 z-[1] overflow-hidden rounded-md border px-1.5 py-1 text-[10px] leading-tight shadow-sm",
-                              b.status === "pending_deposit"
-                                ? "border-amber-300 bg-amber-50 text-amber-950"
-                                : b.status === "completed"
-                                  ? "border-emerald-300 bg-emerald-50 text-emerald-950"
-                                  : b.source === "walk_in" || b.source === "manual"
-                                    ? "border-violet-300 bg-violet-50 text-violet-950"
-                                    : "border-sky-300 bg-sky-50 text-sky-950",
+                              statusClass(b),
                             )}
                             style={{ height: `${rows * 44 - 4}px` }}
-                            title={`${b.customerName} · ${b.serviceName}`}
+                            title={`${b.customerName} · ${b.serviceName} · ${STATUS_LABEL[(b.status || "confirmed") as BookingStatus]}`}
                           >
                             <p className="truncate font-semibold">
                               {b.customerName}
@@ -637,94 +853,135 @@ function BookingList({
   onConfirmDeposit: (id: string) => void;
   compact?: boolean;
 }) {
-  if (bookings.length === 0) {
-    return (
-      <Card>
-        <CardContent className="p-6 text-sm text-stone-500">
-          此期間尚無預約。
-        </CardContent>
-      </Card>
-    );
-  }
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return bookings;
+    return bookings.filter((b) => {
+      const name = (b.customerName || "").toLowerCase();
+      const phone = (b.customerPhone || "").replace(/\s+/g, "");
+      return name.includes(q) || phone.includes(q.replace(/\s+/g, ""));
+    });
+  }, [bookings, query]);
 
   return (
     <div className="space-y-3">
-      {bookings.map((b) => (
-        <Card key={b.id}>
-          <CardHeader className={cn("pb-2", compact && "py-3")}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-base sm:text-lg">
-                  {b.slotLabel} · {b.serviceName}
-                </CardTitle>
-                <CardDescription>
-                  {b.customerName} · {b.customerPhone}
-                  {b.staffName ? ` · ${b.staffName}` : ""}
-                  {b.source === "walk_in"
-                    ? " · 現場客"
-                    : b.source === "manual"
-                      ? " · 手動"
-                      : ""}
-                  {b.blacklisted ? " · 已在黑名單" : ""}
-                  {b.status
-                    ? ` · ${STATUS_LABEL[b.status] || b.status}`
-                    : ""}
-                  {typeof b.depositAmount === "number" && b.depositAmount > 0
-                    ? ` · 訂金 NT$${b.depositAmount}（${b.depositStatus || "pending"}）`
-                    : ""}
-                </CardDescription>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {b.depositStatus === "reported" ||
-                b.depositStatus === "pending" ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-amber-300 text-amber-900"
-                    disabled={busyId === b.id}
-                    onClick={() => onConfirmDeposit(b.id)}
-                  >
-                    確認訂金
-                  </Button>
-                ) : null}
-                <select
-                  className="rounded-lg border border-stone-200 px-2 py-2 text-xs"
-                  value={b.status || "confirmed"}
-                  disabled={busyId === b.id}
-                  onChange={(e) =>
-                    onStatus(b.id, e.target.value as BookingStatus)
-                  }
-                >
-                  {(
-                    Object.keys(STATUS_LABEL) as BookingStatus[]
-                  ).map((s) => (
-                    <option key={s} value={s}>
-                      {STATUS_LABEL[s]}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="border-rose-300 text-rose-800"
-                  disabled={busyId === b.id || b.blacklisted}
-                  onClick={() => onBlacklist(b)}
-                >
-                  <Ban className="h-4 w-4" />
-                  {b.blacklisted ? "已在黑名單" : "黑名單"}
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          {!compact && b.note ? (
-            <CardContent className="pt-0 text-sm text-stone-600">
-              <p className="whitespace-pre-wrap rounded-xl bg-stone-50 px-3 py-2">
-                {b.note}
-              </p>
-            </CardContent>
-          ) : null}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜尋顧客姓名或電話"
+          className="pl-9"
+          aria-label="搜尋預約"
+        />
+      </div>
+      {filtered.length === 0 ? (
+        <Card>
+          <CardContent className="p-6 text-sm text-stone-500">
+            {bookings.length === 0 ? "此期間尚無預約。" : "找不到符合的預約。"}
+          </CardContent>
         </Card>
-      ))}
+      ) : (
+        filtered.map((b) => {
+          const status = (b.status || "confirmed") as BookingStatus;
+          return (
+            <Card key={b.id}>
+              <CardHeader className={cn("pb-2", compact && "py-3")}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base sm:text-lg">
+                      {b.slotLabel} · {b.serviceName}
+                    </CardTitle>
+                    <CardDescription>
+                      {b.customerName} · {b.customerPhone}
+                      {b.staffName ? ` · ${b.staffName}` : ""}
+                      {b.source === "walk_in"
+                        ? " · 現場客"
+                        : b.source === "manual"
+                          ? " · 手動"
+                          : ""}
+                      {b.blacklisted ? " · 已在黑名單" : ""}
+                      {` · ${STATUS_LABEL[status] || status}`}
+                      {typeof b.depositAmount === "number" &&
+                      b.depositAmount > 0
+                        ? ` · 訂金 NT$${b.depositAmount}（${b.depositStatus || "pending"}）`
+                        : ""}
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {b.depositStatus === "reported" ||
+                    b.depositStatus === "pending" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-amber-300 text-amber-900"
+                        disabled={busyId === b.id}
+                        onClick={() => onConfirmDeposit(b.id)}
+                      >
+                        確認訂金
+                      </Button>
+                    ) : null}
+                    {status !== "confirmed" && status !== "completed" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-sky-700 text-white hover:bg-sky-800"
+                        disabled={busyId === b.id}
+                        onClick={() => onStatus(b.id, "confirmed")}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        確認
+                      </Button>
+                    ) : null}
+                    {status !== "completed" && status !== "cancelled" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-emerald-700 text-white hover:bg-emerald-800"
+                        disabled={busyId === b.id}
+                        onClick={() => onStatus(b.id, "completed")}
+                      >
+                        完成
+                      </Button>
+                    ) : null}
+                    {status !== "cancelled" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-stone-300 text-stone-700"
+                        disabled={busyId === b.id}
+                        onClick={() => onStatus(b.id, "cancelled")}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        取消
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-rose-300 text-rose-800"
+                      disabled={busyId === b.id || b.blacklisted}
+                      onClick={() => onBlacklist(b)}
+                    >
+                      <Ban className="h-4 w-4" />
+                      {b.blacklisted ? "已在黑名單" : "黑名單"}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              {!compact && b.note ? (
+                <CardContent className="pt-0 text-sm text-stone-600">
+                  <p className="whitespace-pre-wrap rounded-xl bg-stone-50 px-3 py-2">
+                    {b.note}
+                  </p>
+                </CardContent>
+              ) : null}
+            </Card>
+          );
+        })
+      )}
     </div>
   );
 }

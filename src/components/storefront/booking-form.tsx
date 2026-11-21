@@ -81,6 +81,9 @@ type SuccessPayload = {
   depositMethod?: string;
   depositStatus?: string;
   depositBankHint?: string;
+  /** Seller LINE / email notify fired */
+  sellerNotified?: boolean;
+  message?: string;
 };
 
 function clampDuration(raw: unknown, fallback = 60) {
@@ -499,12 +502,26 @@ export function BookingForm({
           bankHint?: string;
           checkoutPath?: string | null;
         } | null;
+        notify?: Record<string, unknown>;
+        message?: string;
       };
       if (!res.ok) {
         setError(data.error || "預約失敗，請稍後再試");
         void loadSlots();
         return;
       }
+
+      const notify = data.notify || {};
+      const sellerNotified = Object.entries(notify).some(
+        ([key, val]) =>
+          (key.startsWith("sellerLine") || key.startsWith("sellerEmail")) &&
+          Boolean(
+            val &&
+              typeof val === "object" &&
+              "ok" in val &&
+              (val as { ok?: boolean }).ok,
+          ),
+      );
 
       // 不觸發 ECPay SDK／線上刷卡；直接完成輕量預約
       setSuccess({
@@ -524,6 +541,8 @@ export function BookingForm({
         depositMethod: data.booking?.depositMethod,
         depositStatus: data.booking?.depositStatus,
         depositBankHint: data.deposit?.bankHint,
+        sellerNotified,
+        message: data.message,
       });
       setCustomerName("");
       setPhone("");
@@ -998,10 +1017,22 @@ export function BookingForm({
                   id="booking-success-title"
                   className="text-lg font-bold text-stone-900"
                 >
-                  預約成功
+                  預約完成
                 </h3>
                 <p className="mt-1 text-sm text-stone-500">
-                  店家已收到即時通知；行前會再提醒您到店。
+                  {success.message ||
+                    "您的預約已送出。行前會再提醒您到店。"}
+                </p>
+                <p
+                  className={
+                    success.sellerNotified
+                      ? "mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"
+                      : "mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900"
+                  }
+                >
+                  {success.sellerNotified
+                    ? "已觸發店家 LINE／Email 即時提醒通知"
+                    : "預約已建立；若店家已綁定 LINE，稍後也會收到提醒"}
                 </p>
               </div>
             </div>

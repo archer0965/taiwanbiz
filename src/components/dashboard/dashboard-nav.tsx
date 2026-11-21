@@ -1,6 +1,7 @@
 "use client";
 
 import { BrandLogo } from "@/components/brand-logo";
+import { NovaOsAccountBar } from "@/components/dashboard/novaos-account-bar";
 import { Button } from "@/components/ui/button";
 import { isDeveloperEmail } from "@/lib/roles";
 import { getTenantsByOwnerEmail } from "@/lib/tenant-storage";
@@ -144,7 +145,7 @@ export function DashboardNav() {
 
   return (
     <aside className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/90 lg:static lg:flex lg:min-h-screen lg:w-64 lg:flex-col lg:border-b-0 lg:border-r lg:bg-white lg:backdrop-blur-none">
-      <div className="flex h-14 items-center gap-2.5 border-b border-slate-100 px-4 pt-[env(safe-area-inset-top,0px)] sm:h-16 sm:px-5">
+      <div className="flex h-14 items-center justify-between gap-2 border-b border-slate-100 px-3 pt-[env(safe-area-inset-top,0px)] sm:h-16 sm:px-4">
         <Link href="/" className="flex min-w-0 items-center gap-2.5">
           <BrandLogo size={36} />
           <span className="min-w-0">
@@ -152,11 +153,11 @@ export function DashboardNav() {
               拓脈
             </span>
             <span className="block truncate text-[11px] text-slate-400">
-              {isAdmin ? "總管理員" : "店家後台"} ·{" "}
-              {data?.user?.email || "Nova Crest Pulse"}
+              {isAdmin ? "總管理員" : "店家後台"} · NovaOS
             </span>
           </span>
         </Link>
+        <NovaOsAccountBar className="shrink-0" />
       </div>
       <nav
         className="scroll-x-touch flex gap-1 overflow-x-auto px-3 py-2.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden lg:flex-1 lg:flex-col lg:overflow-y-auto lg:overflow-x-visible lg:py-3 lg:[scrollbar-width:thin] lg:[&::-webkit-scrollbar]:block"
