@@ -10,7 +10,7 @@ import { Suspense } from "react";
 export const metadata: Metadata = {
   title: "方案定價｜拓脈（Nova Crest Pulse）",
   description:
-    "極速預約基礎版月繳 NT$299／年繳 NT$2,990；品牌導流旗艦版月繳 NT$499／年繳 NT$4,990。年繳立省 2 個月。",
+    "極速預約基礎版月繳 NT$299／年繳 NT$3,588；品牌導流旗艦版月繳 NT$499／年繳 NT$5,988（與 NovaOS 主站對齊）。",
 };
 
 export default function PricingPage() {

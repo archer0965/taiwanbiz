@@ -29,6 +29,15 @@ export default function LoginPage() {
           總管理員可開通／暫停店家；自主方案店主使用綁定 Email
           登入後，僅能管理自己的店家資料。
         </p>
+        <a
+          href="https://paycheck.com.de/login?next=%2Fdashboard%2Fpass"
+          className="mt-5 flex h-11 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white hover:bg-slate-800"
+        >
+          使用拓新雲端帳號（方案／訂閱）
+        </a>
+        <p className="mt-2 text-center text-xs text-slate-400">
+          新客註冊與付費升級統一走主站；下方為既有店主／總管後台登入。
+        </p>
         <div className="mt-7">
           <Suspense
             fallback={<div className="h-28 animate-pulse rounded-xl bg-slate-100" />}

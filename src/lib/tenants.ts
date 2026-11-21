@@ -44,7 +44,7 @@ export type TenantRecord = {
   pageViews: number;
   ownerEmail: string;
   createdAt: string;
-  /** 是否占用創始會員名額（前 10 組：14 天試用＋續費終身 8 折） */
+  /** 是否占用創始會員名額（前 15 組：14 天試用＋續費終身 8 折） */
   isFoundingMember: boolean;
   /** 慣用續約金流 */
   billingMethod: TenantBillingMethod;

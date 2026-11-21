@@ -10,7 +10,7 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     ...founding,
-    discountLabel: "前 10 組：14 天免費＋續費終身 8 折",
+    discountLabel: "前 15 組：14 天免費＋續費終身 8 折",
     rate: FOUNDING_MEMBER_RATE,
   });
 }

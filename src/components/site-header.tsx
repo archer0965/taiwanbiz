@@ -50,7 +50,7 @@ const primaryNav: NavItem[] = [
   {
     href: "/pricing",
     label: "方案價格",
-    description: "前 10 組：14 天免費＋續費 8 折・綠界付款",
+    description: "前 15 組：14 天免費＋續費 8 折・綠界付款",
     icon: Wallet,
   },
   {

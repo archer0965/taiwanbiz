@@ -284,8 +284,7 @@ export function PricingSection({ showHeading = true, className }: Props) {
         <p className="mx-auto mt-10 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-center text-sm leading-relaxed text-slate-600">
           {PRICING_NOTE}
           <span className="mt-1 block text-xs text-slate-400">
-            年繳：基礎版 NT$2,990／年（約 $249／月）；旗艦版 NT$4,990／年（約
-            $415／月）＝月費 × 10，贈送 2 個月
+            年繳（主站權威）：基礎版 NT$3,588／年；旗艦版 NT$5,988／年＝月費 × 12
           </span>
         </p>
 
@@ -435,7 +434,7 @@ function PlanCard({
             </p>
             {plan.recommended ? (
               <p className="mt-1.5 text-xs text-stone-500 sm:text-sm">
-                前 10 組：14 天免費，續費{" "}
+                前 15 組：14 天免費，續費{" "}
                 <span className="font-semibold tabular-nums text-rose-800">
                   {formatTwd(foundingMonthly)}
                 </span>

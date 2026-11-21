@@ -372,7 +372,7 @@ export async function handlePaymentWebhook(input: {
 }
 
 /**
- * 前 10 組創始：占用名額並開通 14 天免費試用。
+ * 前 15 組創始：占用名額並開通 14 天免費試用。
  * 試用結束後請以綠界依終身 8 折續費（不再免付費展延）。
  */
 export async function activateFoundingFreeSubscription(input: {

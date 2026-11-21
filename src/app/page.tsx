@@ -43,7 +43,7 @@ const features = [
   {
     icon: Wallet,
     title: "先註冊／創始 8 折",
-    desc: "先註冊再開通試用；前 10 組 14 天免費後續費 8 折，額滿後 3 天試用。忘記續費可保留網站 30 天。",
+    desc: "先註冊再開通試用；前 15 組 14 天免費後續費 8 折，額滿後 3 天試用。忘記續費可保留網站 30 天。",
   },
 ];
 
@@ -255,7 +255,7 @@ export default function HomePage() {
                   自我經營、綠界線上開通
                 </h2>
                 <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[color:var(--lp-muted)]">
-                  先註冊即可上線；前 10 組創始 14 天試用後 8 折，額滿後 3 天試用。
+                  先註冊即可上線；前 15 組創始 14 天試用後 8 折，額滿後 3 天試用。
                 </p>
               </div>
             </div>

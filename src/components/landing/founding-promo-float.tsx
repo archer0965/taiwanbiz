@@ -36,7 +36,7 @@ function readDismissed() {
 }
 
 /**
- * 主頁上方浮動框：彙整前 10 組創始全部優惠項目
+ * 主頁上方浮動框：彙整前 15 組創始全部優惠項目
  */
 export function FoundingPromoFloat() {
   const ready = useClientReady();

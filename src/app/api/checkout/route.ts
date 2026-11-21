@@ -41,7 +41,7 @@ type CheckoutBody = {
   renewalToken?: string;
   /** true：開通免費試用（不經綠界扣款） */
   startTrial?: boolean;
-  /** true：前 10 組創始開通（14 天免費試用；之後續費 8 折） */
+  /** true：前 15 組創始開通（14 天免費試用；之後續費 8 折） */
   activateFoundingFree?: boolean;
   /** 新帳號綁定登入密碼 */
   password?: string;
@@ -146,7 +146,7 @@ export async function POST(request: Request) {
     Boolean(body.activateFoundingFree) ||
     (wantTrial && wantFounding && founding.available);
 
-  // 前 10 組創始：占用名額＋14 天免費試用
+  // 前 15 組創始：占用名額＋14 天免費試用
   if (wantFoundingFree && wantFounding) {
     if (!ownerEmail) {
       return NextResponse.json(

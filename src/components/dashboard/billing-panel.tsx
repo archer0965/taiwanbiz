@@ -316,7 +316,7 @@ export function BillingPanel() {
                     <p className="mt-0.5 text-xs text-stone-500">
                       年繳 $
                       {ARCHITECTURE.plans.starter.annual.toLocaleString("en-US")}
-                      （約 $249／月・贈 2 個月）
+                      （主站年繳 NT$3,588）
                     </p>
                     <p className="mt-1 text-[11px] text-emerald-700">
                       推薦碼首月現折後約 $
@@ -342,7 +342,7 @@ export function BillingPanel() {
                       {ARCHITECTURE.plans.flagship.annual.toLocaleString(
                         "en-US",
                       )}
-                      （約 $415／月・贈 2 個月）
+                      （主站年繳 NT$5,988）
                     </p>
                     <p className="mt-1 text-[11px] text-emerald-700">
                       推薦碼首月現折後約 $

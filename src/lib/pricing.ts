@@ -41,7 +41,7 @@ export const marketTypes: MarketType[] = [
 ];
 
 export const PRICING_NOTE =
-  "所有方案皆可隨時升降級。流程為先註冊再開通試用。訂閱費用為拓脈平台月費／年費，與店內現場收款無關。年繳立省 2 個月；前 10 組創始含 14 天免費試用後續費 8 折，額滿後新客 3 天試用。忘記續費可保留網站 30 天。";
+  "所有方案皆可隨時升降級。流程為先註冊再開通試用。訂閱費用為拓脈平台月費／年費，與店內現場收款無關。年繳以主站價目為準；前 15 組創始含 14 天免費試用後續費 8 折，額滿後新客 3 天試用。忘記續費可保留網站 30 天。";
 
 /** @deprecated 網拍方案已下架；保留常數避免舊匯入炸掉 */
 export const SHOP_PRICING_NOTE =
@@ -63,11 +63,11 @@ export const LINE_FRIEND_URL =
   }`;
 
 /**
- * 年繳 = 月費 × 10（立省 2 個月／贈送 2 個月）
- * 例：299 → 2,990（約 249／月）；499 → 4,990（約 415／月）
+ * 年繳以 NovaOS 主站為權威：月費 × 12（與 paycheck.com.de CENTRAL_PLANS 對齊）
+ * 例：299 → 3,588；499 → 5,988
  */
 export function annualPrice(monthly: number) {
-  return Math.round(monthly * 10);
+  return Math.round(monthly * 12);
 }
 
 export function annualMonthlyEquivalent(monthly: number) {
@@ -87,7 +87,7 @@ export function formatTwd(amount: number) {
 export const FOUNDING_MEMBER_RATE = 0.8;
 
 /** 創始名額上限；湊滿後結帳不再顯示創始選項 */
-export const FOUNDING_MEMBER_LIMIT = 10;
+export const FOUNDING_MEMBER_LIMIT = 15;
 
 /**
  * @deprecated 創始改為試用後按 8 折續費，不再一次免付費多年；保留常數相容舊引用
@@ -105,14 +105,14 @@ export const TRIAL_DAYS = FOUNDING_TRIAL_DAYS;
 
 export const TRIAL_LABEL = "免費全功能試用期";
 
-export const FOUNDING_FREE_LABEL = "前 10 組創始：14 天免費＋續費終身 8 折";
+export const FOUNDING_FREE_LABEL = "前 15 組創始：14 天免費＋續費終身 8 折";
 
 /** 依是否創始回傳試用天數 */
 export function trialDaysFor(isFoundingMember: boolean) {
   return isFoundingMember ? FOUNDING_TRIAL_DAYS : STANDARD_TRIAL_DAYS;
 }
 
-/** 前 10 組創始優惠項目（主頁浮動框／定價文案共用） */
+/** 前 15 組創始優惠項目（主頁浮動框／定價文案共用） */
 export const FOUNDING_BENEFITS = [
   `前 ${FOUNDING_TRIAL_DAYS} 天免費全功能試用`,
   "試用結束後每次續費終身 8 折",
@@ -270,7 +270,7 @@ export const pricingCategories: PricingCategory[] = [
     label: "自主經營",
     enLabel: "Self-Serve",
     description:
-      "基礎版打通預約與通知；旗艦版加上微型官網與刮刮樂留客。先註冊再開通：前 10 組創始 14 天試用後續費 8 折；額滿後 3 天試用。",
+      "基礎版打通預約與通知；旗艦版加上微型官網與刮刮樂留客。先註冊再開通：前 15 組創始 14 天試用後續費 8 折；額滿後 3 天試用。",
     plans: [
       {
         id: "starter",
@@ -363,6 +363,6 @@ export const PRICING_FAQS = [
     id: "q7",
     question: "年繳方案的優惠折扣是怎麼計算的？",
     answer:
-      "年繳以「月費 × 10」計算，相當於立省／贈送 2 個月。極速預約基礎版年繳 NT$2,990（約 $249／月）；品牌導流旗艦版年繳 NT$4,990（約 $415／月）。前 10 組創始試用後續費再享 8 折。",
+      "年繳以 NovaOS 主站為準（月費 × 12）：基礎版 NT$3,588；旗艦版 NT$5,988。前 15 組創始試用後續費再享 8 折。",
   },
 ];
