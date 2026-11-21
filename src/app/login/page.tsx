@@ -1,6 +1,7 @@
 import { isDemoLoginEnabled, isGoogleAuthConfigured } from "@/auth";
 import { BrandLogo } from "@/components/brand-logo";
 import { LoginForm } from "@/components/auth/login-form";
+import { hubAuthRedirect } from "@/lib/hub-auth";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -30,7 +31,7 @@ export default function LoginPage() {
           登入後，僅能管理自己的店家資料。
         </p>
         <a
-          href="https://paycheck.com.de/login?next=%2Fdashboard%2Fpass"
+          href={hubAuthRedirect("login", "/welcome")}
           className="mt-5 flex h-11 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white hover:bg-slate-800"
         >
           使用拓新雲端帳號（方案／訂閱）

@@ -42,6 +42,37 @@ const providers = [
       ]
     : []),
   Credentials({
+    id: "hub",
+    name: "拓新雲端帳號",
+    credentials: {
+      access_token: { label: "access_token", type: "text" },
+      refresh_token: { label: "refresh_token", type: "text" },
+    },
+    async authorize(credentials) {
+      const accessToken =
+        typeof credentials?.access_token === "string"
+          ? credentials.access_token
+          : "";
+      if (!accessToken) return null;
+      const { fetchSupabaseUser } = await import("@/lib/supabase-user");
+      const user = await fetchSupabaseUser(accessToken);
+      const email = user?.email?.trim().toLowerCase() || "";
+      if (!user?.id || !isValidLoginEmail(email)) return null;
+      const name =
+        (typeof user.user_metadata?.full_name === "string" &&
+          user.user_metadata.full_name) ||
+        (typeof user.user_metadata?.name === "string" &&
+          user.user_metadata.name) ||
+        email;
+      return {
+        id: user.id,
+        name,
+        email,
+        image: null,
+      };
+    },
+  }),
+  Credentials({
     id: "demo",
     name: "店主／管理員登入",
     credentials: {
@@ -124,6 +155,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return true;
         }
         return process.env.ALLOW_OWNER_LOGIN === "true";
+      }
+      // NovaOS hub handoff — any verified Supabase user may enter.
+      if (account?.provider === "hub") {
+        return Boolean(email);
       }
       return true;
     },
