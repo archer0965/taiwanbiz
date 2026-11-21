@@ -31,7 +31,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type BookingRow = BookingRecord & { blacklisted?: boolean };
 type BlockedSlot = { date: string; time: string };
-type ViewMode = "day" | "week" | "month" | "list";
+type ViewMode = "day" | "week" | "month" | "list" | "staff";
+
+function bookingPayAmount(b: BookingRow) {
+  if (typeof b.payAmount === "number" && Number.isFinite(b.payAmount)) {
+    return Math.max(0, b.payAmount);
+  }
+  if (typeof b.listAmount === "number" && Number.isFinite(b.listAmount)) {
+    return Math.max(0, b.listAmount);
+  }
+  return 0;
+}
 
 const STATUS_COLOR: Record<BookingStatus, string> = {
   pending_deposit: "border-amber-300 bg-amber-50 text-amber-950",
@@ -101,6 +111,7 @@ function BookingsClient() {
   const { slug } = useActiveStore();
   const [date, setDate] = useState(todayYmdTaipei);
   const [view, setView] = useState<ViewMode>("day");
+  const [staffFilter, setStaffFilter] = useState("");
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [staffNames, setStaffNames] = useState<string[]>([]);
@@ -159,15 +170,23 @@ function BookingsClient() {
       if (!res.ok) throw new Error(data.error || "載入失敗");
       setBookings(data.bookings || []);
       setBlockedSlots(data.blockedSlots || []);
-      setStaffNames(
-        (data.staff || []).map((s) => s.name || "").filter(Boolean),
-      );
+      const names = (data.staff || [])
+        .map((s) => s.name || "")
+        .filter(Boolean);
+      setStaffNames(names);
       setProductNames(
         (data.products || []).map((p) => p.name || "").filter(Boolean),
       );
       if (view === "month" || view === "list") {
         setMonthStatsBookings(data.bookings || []);
       }
+      setStaffFilter((prev) => {
+        if (view === "staff" && !prev && names[0]) return names[0];
+        if (prev && names.length && !names.includes(prev)) {
+          return names[0] || "";
+        }
+        return prev;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "載入失敗");
       setBookings([]);
@@ -202,14 +221,30 @@ function BookingsClient() {
     };
   }, [slug, month.from, month.to]);
 
+  const visibleBookings = useMemo(() => {
+    if (view !== "staff" || !staffFilter) return bookings;
+    return bookings.filter((b) => (b.staffName || "") === staffFilter);
+  }, [bookings, view, staffFilter]);
+
   const opsStats = useMemo(() => {
     const today = todayYmdTaipei();
     let todayCount = 0;
+    let todayRevenue = 0;
+    let selectedDayCount = 0;
+    let selectedDayRevenue = 0;
     const serviceCount = new Map<string, number>();
     for (const b of monthStatsBookings) {
       if ((b.status || "confirmed") === "cancelled") continue;
       const parts = toTaipeiDateAndTime(b.startsAt);
-      if (parts?.date === today) todayCount += 1;
+      const amount = bookingPayAmount(b);
+      if (parts?.date === today) {
+        todayCount += 1;
+        todayRevenue += amount;
+      }
+      if (parts?.date === date) {
+        selectedDayCount += 1;
+        selectedDayRevenue += amount;
+      }
       const names = String(b.serviceName || "")
         .split(/[、,/|]+/)
         .map((s) => s.trim())
@@ -218,14 +253,33 @@ function BookingsClient() {
         serviceCount.set(n, (serviceCount.get(n) || 0) + 1);
       }
     }
+    // day/staff view：當日列表可能比月統計更即時
+    if (view === "day" || view === "staff") {
+      selectedDayCount = 0;
+      selectedDayRevenue = 0;
+      for (const b of visibleBookings) {
+        if ((b.status || "confirmed") === "cancelled") continue;
+        const parts = toTaipeiDateAndTime(b.startsAt);
+        if (parts?.date !== date) continue;
+        selectedDayCount += 1;
+        selectedDayRevenue += bookingPayAmount(b);
+      }
+    }
     const popular = [...serviceCount.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
     const activeMonth = monthStatsBookings.filter(
       (b) => (b.status || "confirmed") !== "cancelled",
     ).length;
-    return { todayCount, activeMonth, popular };
-  }, [monthStatsBookings]);
+    return {
+      todayCount,
+      todayRevenue,
+      selectedDayCount,
+      selectedDayRevenue,
+      activeMonth,
+      popular,
+    };
+  }, [monthStatsBookings, date, view, visibleBookings]);
 
   function toast(msg: string) {
     setToastMsg(msg);
@@ -320,6 +374,9 @@ function BookingsClient() {
     setManualDate(dateYmd);
     setManualTime(time);
     setManualWalkIn(walkIn);
+    if (view === "staff" && staffFilter) {
+      setManualStaff(staffFilter);
+    }
     setManualOpen(true);
   }
 
@@ -351,7 +408,7 @@ function BookingsClient() {
   const dayColumns = view === "week" ? week.days : [date];
 
   function bookingsFor(dateYmd: string, timeHm: string, includeCancelled = false) {
-    return bookings.filter((b) => {
+    return visibleBookings.filter((b) => {
       if (!includeCancelled && (b.status || "confirmed") === "cancelled") {
         return false;
       }
@@ -365,7 +422,7 @@ function BookingsClient() {
   }
 
   function bookingsOnDay(dateYmd: string) {
-    return bookings.filter((b) => {
+    return visibleBookings.filter((b) => {
       const parts = toTaipeiDateAndTime(b.startsAt);
       return parts?.date === dateYmd;
     });
@@ -397,7 +454,7 @@ function BookingsClient() {
             預約時間軸日曆
           </h1>
           <p className="mt-1 text-sm text-stone-500">
-            日／週／月行事曆與列表；可快速新增現場客、一鍵改狀態或封鎖時段。
+            日／週／月／設計師行事曆與列表；可快速新增現場客、一鍵改狀態或封鎖時段。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -412,12 +469,30 @@ function BookingsClient() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs font-medium text-stone-500">今日預約數</p>
+            <p className="text-xs font-medium text-stone-500">
+              選定日預約數（{date.slice(5)}）
+            </p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-stone-900">
-              {opsStats.todayCount}
+              {opsStats.selectedDayCount}
+            </p>
+            <p className="mt-1 text-xs text-stone-400">
+              今日全店 {opsStats.todayCount} 筆
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs font-medium text-stone-500">
+              選定日營收（{date.slice(5)}）
+            </p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-stone-900">
+              NT${opsStats.selectedDayRevenue.toLocaleString("en-US")}
+            </p>
+            <p className="mt-1 text-xs text-stone-400">
+              今日 NT${opsStats.todayRevenue.toLocaleString("en-US")}
             </p>
           </CardContent>
         </Card>
@@ -458,7 +533,7 @@ function BookingsClient() {
             檢視與日期
           </CardTitle>
           <CardDescription>
-            台北時區 · 色彩：待訂金／已確認／已完成／已取消
+            台北時區 · 設計師行事曆可篩單人班表 · 色彩：待訂金／已確認／已完成／已取消
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
@@ -478,13 +553,19 @@ function BookingsClient() {
                 ["day", "日"],
                 ["week", "週"],
                 ["month", "月"],
+                ["staff", "設計師行事曆"],
                 ["list", "列表"],
               ] as const
             ).map(([id, label]) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => setView(id)}
+                onClick={() => {
+                  setView(id);
+                  if (id === "staff" && !staffFilter && staffNames[0]) {
+                    setStaffFilter(staffNames[0]);
+                  }
+                }}
                 className={cn(
                   "rounded-lg px-3 py-1.5 text-sm font-medium",
                   view === id
@@ -496,6 +577,27 @@ function BookingsClient() {
               </button>
             ))}
           </div>
+          {view === "staff" ? (
+            <div>
+              <Label htmlFor="bk-staff-filter">設計師</Label>
+              <select
+                id="bk-staff-filter"
+                className="mt-1.5 w-44 rounded-lg border border-stone-200 px-2 py-2 text-sm"
+                value={staffFilter}
+                onChange={(e) => setStaffFilter(e.target.value)}
+              >
+                {staffNames.length === 0 ? (
+                  <option value="">尚無設計師</option>
+                ) : (
+                  staffNames.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+          ) : null}
           {view === "week" ? (
             <p className="text-xs text-stone-500">
               {week.from} ～ {week.to}
@@ -504,6 +606,11 @@ function BookingsClient() {
           {view === "month" || view === "list" ? (
             <p className="text-xs text-stone-500">
               {month.from} ～ {month.to}
+            </p>
+          ) : null}
+          {view === "staff" && staffFilter ? (
+            <p className="text-xs text-stone-500">
+              僅顯示「{staffFilter}」當日班表與預約
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2 text-[11px] text-stone-500">
@@ -533,7 +640,7 @@ function BookingsClient() {
         <p className="text-sm text-stone-500">載入預約中…</p>
       ) : view === "list" ? (
         <BookingList
-          bookings={bookings}
+          bookings={visibleBookings}
           busyId={busyId}
           onBlacklist={(b) => void addToBlacklist(b)}
           onStatus={(id, s) => void updateStatus(id, s)}
@@ -708,11 +815,11 @@ function BookingsClient() {
         </div>
       )}
 
-      {view !== "list" && bookings.length > 0 ? (
+      {view !== "list" && visibleBookings.length > 0 ? (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-stone-700">當期預約明細</h2>
           <BookingList
-            bookings={bookings}
+            bookings={visibleBookings}
             busyId={busyId}
             onBlacklist={(b) => void addToBlacklist(b)}
             onStatus={(id, s) => void updateStatus(id, s)}

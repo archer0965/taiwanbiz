@@ -4,8 +4,11 @@ import {
   createBlacklistEntry,
   isBlacklisted,
   normalizeBlacklists,
+  normalizeStaffMembers,
+  stylistAcceptsSlot,
   upsertCustomerFromBooking,
 } from "@/lib/beauty-ops";
+import { slotConflicts } from "@/lib/booking-conflicts";
 import {
   computeRemindAt,
   createBookingId,
@@ -290,8 +293,52 @@ async function handleManualBooking(
 
   const content = await getStoreContent(storeSlug);
   const tenant = await getTenantDbByStoreId(storeSlug);
+  const hours = normalizeBusinessHours(content?.businessHours);
   const startsAt = new Date(`${dateYmd}T${timeHm}:00+08:00`).toISOString();
   const now = new Date();
+
+  if (staffName && staffName !== "不指定") {
+    const stylist = normalizeStaffMembers(content?.staff).find(
+      (s) => s.name === staffName,
+    );
+    if (
+      !stylistAcceptsSlot({
+        staff: stylist,
+        storeWeek: hours.week,
+        dateYmd,
+        startHm: timeHm,
+        durationMinutes,
+      })
+    ) {
+      return NextResponse.json(
+        {
+          error: `設計師「${staffName}」此時段未排班或無法容納 ${durationMinutes} 分鐘`,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
+  if (
+    slotConflicts({
+      bookings: listBookingsForStoreDb(storeSlug),
+      dateYmd,
+      timeHm,
+      durationMinutes,
+      bufferMinutes: hours.bufferTimeMinutes,
+      staffName: staffName || undefined,
+      blockedSlots: hours.blockedSlots,
+    })
+  ) {
+    return NextResponse.json(
+      {
+        error: staffName
+          ? `設計師「${staffName}」此時段已有重疊預約`
+          : "此時段已與現有預約重疊，請改選其他時間",
+      },
+      { status: 409 },
+    );
+  }
 
   const booking: BookingRecord = {
     id: createBookingId(),

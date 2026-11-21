@@ -31,9 +31,12 @@ function authorized(request: Request) {
 }
 
 /**
- * 行前提醒＋課後關心／五星好評導流
- * （服務當日 20:00 或晚間檔次次日 10:00，台北時區）
- * Vercel Cron：GET /api/cron/booking-reminders
+ * 顧客預約行前提醒＋課後關心／五星好評導流
+ * 工作路徑：booking.remindAt（建立時 computeRemindAt）→ 本 Cron 掃描
+ * listBookingsDueForReminderDb → notifyBookingReminder（Email／LINE）
+ * → markBookingReminderSentDb。已取消預約不會進入到期清單。
+ * （課後：服務當日 20:00 或晚間檔次次日 10:00，台北時區）
+ * Vercel Cron：GET /api/cron/booking-reminders（vercel.json）
  */
 export async function GET(request: Request) {
   if (!authorized(request)) {

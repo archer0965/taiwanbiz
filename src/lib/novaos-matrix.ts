@@ -4,6 +4,7 @@ export const NOVAOS_HUB_URL =
   process.env.NEXT_PUBLIC_NOVAOS_URL?.replace(/\/$/, "") ||
   "https://paycheck.com.de";
 
+/** 對外產品名一律「訂閱管家」（勿顯示 SubKeeper）；訂閱管家為永久免費個人工具。 */
 export const NOVAOS_MATRIX = [
   { name: "NovaOS 主站", href: NOVAOS_HUB_URL },
   { name: "NovaStore", href: "https://novastore-omega.vercel.app/dashboard" },

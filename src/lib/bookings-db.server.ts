@@ -55,11 +55,18 @@ export function listBookingsForStoreDb(storeSlug: string) {
   return readAll().filter((b) => b.storeSlug === storeSlug);
 }
 
+/**
+ * 行前提醒到期清單（略過已取消）。
+ * 實際寄送：Vercel Cron → GET /api/cron/booking-reminders
+ * → notifyBookingReminder（Email／LINE）→ markBookingReminderSentDb
+ */
 export function listBookingsDueForReminderDb(now = new Date()) {
   const ts = now.getTime();
-  return readAll().filter(
-    (b) => !b.reminderSentAt && new Date(b.remindAt).getTime() <= ts,
-  );
+  return readAll().filter((b) => {
+    if ((b.status || "confirmed") === "cancelled") return false;
+    if (b.reminderSentAt) return false;
+    return new Date(b.remindAt).getTime() <= ts;
+  });
 }
 
 /**

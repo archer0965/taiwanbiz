@@ -117,11 +117,14 @@ export function saveBooking(booking: BookingRecord) {
   return booking;
 }
 
+/** @see listBookingsDueForReminderDb — 正式路徑走 /api/cron/booking-reminders */
 export function listBookingsDueForReminder(now = new Date()) {
   const ts = now.getTime();
-  return memoryStore().filter(
-    (b) => !b.reminderSentAt && new Date(b.remindAt).getTime() <= ts,
-  );
+  return memoryStore().filter((b) => {
+    if ((b.status || "confirmed") === "cancelled") return false;
+    if (b.reminderSentAt) return false;
+    return new Date(b.remindAt).getTime() <= ts;
+  });
 }
 
 export function markBookingReminderSent(id: string, at = new Date()) {
@@ -194,6 +197,7 @@ export function isSlotBooked(
   staffName?: string,
 ) {
   return listBookingsForStore(storeSlug).some((b) => {
+    if ((b.status || "confirmed") === "cancelled") return false;
     const parts = toTaipeiDateAndTime(b.startsAt);
     if (!parts) return false;
     if (parts.date !== dateYmd || parts.time !== timeHm) return false;

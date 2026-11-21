@@ -238,10 +238,20 @@ export function resolveStylistDayHours(
   if (!staff || staff.useStoreHours !== false) {
     return storeWeek[key] || null;
   }
-  return staff.week?.[key] || storeWeek[key] || null;
+  // 個別排班：僅讀該設計師 week；缺日視為休班，避免被店家班表覆蓋
+  return (
+    staff.week?.[key] || {
+      open: false,
+      start: "10:00",
+      end: "20:00",
+    }
+  );
 }
 
-/** 指定設計師當日此時段＋時長是否在其班表內 */
+/**
+ * 指定設計師當日此時段＋時長是否在其班表內。
+ * 多位設計師分開排班：useStoreHours=false 時讀 staff.week，互不共用班表。
+ */
 export function stylistAcceptsSlot(input: {
   staff: StoreStaffMember | null | undefined;
   storeWeek: Record<WeekdayKey, DayHours>;

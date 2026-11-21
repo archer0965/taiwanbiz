@@ -23,16 +23,26 @@ import {
   type StoreBlacklistEntry,
   type StoreCustomerCrm,
 } from "@/lib/beauty-ops";
+import type { BookingRecord } from "@/lib/bookings";
 import { normalizeTaiwanMobile } from "@/lib/phone";
 import { useActiveStore } from "@/lib/use-active-store";
 import { useClientReady } from "@/lib/use-client-ready";
 import { Ban, Save, ShieldOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+const STATUS_LABEL: Record<string, string> = {
+  confirmed: "已確認",
+  completed: "已完成",
+  cancelled: "已取消",
+  no_show: "未到",
+  pending_deposit: "待訂金",
+};
+
 function CustomersClient() {
   const { slug } = useActiveStore();
   const [customers, setCustomers] = useState<StoreCustomerCrm[]>([]);
   const [blacklists, setBlacklists] = useState<StoreBlacklistEntry[]>([]);
+  const [bookingHistory, setBookingHistory] = useState<BookingRecord[]>([]);
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -57,9 +67,33 @@ function CustomersClient() {
     setBlacklists(normalizeBlacklists(data.content?.blacklists));
   }, [slug]);
 
+  const loadBookingHistory = useCallback(async () => {
+    if (!slug) return;
+    // 賣家 CRM：載入近期預約作顧客歷史（前台無獨立顧客登入預約頁）
+    const now = new Date();
+    const from = new Date(now);
+    from.setMonth(from.getMonth() - 12);
+    const toYmd = now.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+    const fromYmd = from.toLocaleDateString("en-CA", {
+      timeZone: "Asia/Taipei",
+    });
+    try {
+      const res = await fetch(
+        `/api/stores/${encodeURIComponent(slug)}/bookings?from=${encodeURIComponent(fromYmd)}&to=${encodeURIComponent(toYmd)}`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { bookings?: BookingRecord[] };
+      setBookingHistory(data.bookings || []);
+    } catch {
+      /* ignore */
+    }
+  }, [slug]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadBookingHistory();
+  }, [load, loadBookingHistory]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -151,7 +185,8 @@ function CustomersClient() {
           顧客 CRM
         </h1>
         <p className="mt-1 text-sm text-stone-500">
-          預約次數、完成率與偏好備註；黑名單顧客無法在前台完成預約。
+          預約次數、完成率、近一年預約歷史與偏好備註；黑名單顧客無法在前台完成預約。
+          （前台無獨立顧客登入歷史頁，賣家於此查看顧客預約紀錄。）
         </p>
       </div>
 
@@ -185,6 +220,17 @@ function CustomersClient() {
               list: blacklists,
             });
             const open = expandedId === c.id;
+            const phoneDigits = (c.phone || "").replace(/\D/g, "");
+            const customerBookings = open
+              ? bookingHistory
+                  .filter(
+                    (b) =>
+                      (b.customerPhone || "").replace(/\D/g, "") === phoneDigits,
+                  )
+                  .slice()
+                  .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
+                  .slice(0, 20)
+              : [];
             return (
               <Card
                 key={c.id}
@@ -304,6 +350,37 @@ function CustomersClient() {
                           });
                         }}
                       />
+                    </div>
+                    <div>
+                      <Label>預約歷史紀錄（近一年）</Label>
+                      {customerBookings.length === 0 ? (
+                        <p className="mt-1 rounded-xl bg-stone-50 px-3 py-2 text-sm text-stone-500">
+                          尚無預約紀錄，或紀錄早於一年。
+                        </p>
+                      ) : (
+                        <ul className="mt-1 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-stone-100 bg-stone-50 p-2">
+                          {customerBookings.map((b) => (
+                            <li
+                              key={b.id}
+                              className="rounded-lg bg-white px-2 py-1.5 text-xs text-stone-700"
+                            >
+                              <span className="font-medium">
+                                {b.slotLabel || b.startsAt.slice(0, 16)}
+                              </span>
+                              {" · "}
+                              {b.serviceName}
+                              {b.staffName ? ` · ${b.staffName}` : ""}
+                              {" · "}
+                              {STATUS_LABEL[b.status || "confirmed"] ||
+                                b.status ||
+                                "已確認"}
+                              {typeof b.payAmount === "number"
+                                ? ` · NT$${b.payAmount}`
+                                : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                     <Button
                       type="button"

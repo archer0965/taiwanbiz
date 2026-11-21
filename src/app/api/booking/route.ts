@@ -9,6 +9,7 @@ import {
   stylistAcceptsSlot,
   upsertCustomerFromBooking,
 } from "@/lib/beauty-ops";
+import { slotConflicts } from "@/lib/booking-conflicts";
 import {
   computeRemindAt,
   createBookingId,
@@ -26,11 +27,9 @@ import {
   resolveSellerLineTargets,
 } from "@/lib/booking-notify";
 import {
-  bookingOccupiedRangeMinutes,
   clampDurationMinutes,
   listCandidateSlotStarts,
   normalizeBusinessHours,
-  rangesOverlap,
   serviceFitsWithinOpeningHours,
   sumServicesDurationMinutes,
 } from "@/lib/business-hours";
@@ -95,71 +94,6 @@ function resolveDurationMinutes(
   );
 }
 
-function readBookingDurationMinutes(booking: BookingRecord) {
-  if (
-    typeof booking.durationMinutes === "number" &&
-    Number.isFinite(booking.durationMinutes)
-  ) {
-    return clampDurationMinutes(booking.durationMinutes);
-  }
-  const fromNote = Number(booking.note?.match(/duration:(\d+)/)?.[1]);
-  return clampDurationMinutes(fromNote || 60);
-}
-
-function slotConflicts(input: {
-  storeSlug: string;
-  dateYmd: string;
-  timeHm: string;
-  durationMinutes: number;
-  bufferMinutes: number;
-  staffName?: string;
-  blockedSlots: Array<{ date: string; time: string }>;
-}) {
-  const proposed = bookingOccupiedRangeMinutes(
-    input.timeHm,
-    input.durationMinutes,
-    input.bufferMinutes,
-  );
-
-  // 手動鎖定時段：起點落在佔用區間內，或與鎖定時段本身（視為同等服務時長）重疊
-  for (const s of input.blockedSlots) {
-    if (s.date !== input.dateYmd) continue;
-    if (s.time === input.timeHm) return true;
-    const blocked = bookingOccupiedRangeMinutes(
-      s.time,
-      input.durationMinutes,
-      input.bufferMinutes,
-    );
-    if (
-      rangesOverlap(proposed.start, proposed.end, blocked.start, blocked.end)
-    ) {
-      return true;
-    }
-  }
-
-  return listBookingsForStoreDb(input.storeSlug).some((b) => {
-    // 取消後自動釋放時段：cancelled 不佔用衝突檢查
-    if ((b.status || "confirmed") === "cancelled") return false;
-    const parts = toTaipeiDateAndTime(b.startsAt);
-    if (!parts || parts.date !== input.dateYmd) return false;
-    if (input.staffName && input.staffName !== "不指定") {
-      if (b.staffName && b.staffName !== input.staffName) return false;
-    }
-    const existingDuration = readBookingDurationMinutes(b);
-    const existing = bookingOccupiedRangeMinutes(
-      parts.time,
-      existingDuration,
-      input.bufferMinutes,
-    );
-    return rangesOverlap(
-      proposed.start,
-      proposed.end,
-      existing.start,
-      existing.end,
-    );
-  });
-}
-
 async function buildSlots(input: {
   storeSlug: string;
   dateYmd: string;
@@ -219,7 +153,7 @@ async function buildSlots(input: {
       fitsDay &&
       stylistOk &&
       slotConflicts({
-        storeSlug: input.storeSlug,
+        bookings: listBookingsForStoreDb(input.storeSlug),
         dateYmd: input.dateYmd,
         timeHm: time,
         durationMinutes: duration,
@@ -554,6 +488,7 @@ export async function POST(request: Request) {
     }
     if (hours.maxDailyBookingsEnabled) {
       const dayCount = listBookingsForStoreDb(storeSlug).filter((b) => {
+        if ((b.status || "confirmed") === "cancelled") return false;
         const parts = toTaipeiDateAndTime(b.startsAt);
         return parts?.date === taipei.date;
       }).length;
@@ -569,9 +504,10 @@ export async function POST(request: Request) {
         );
       }
     }
+    // 同一設計師不可重複預約：POST 與 GET 時段查詢共用 slotConflicts（含 staffName、略過 cancelled）
     if (
       slotConflicts({
-        storeSlug,
+        bookings: listBookingsForStoreDb(storeSlug),
         dateYmd: taipei.date,
         timeHm: taipei.time,
         durationMinutes,
@@ -581,7 +517,11 @@ export async function POST(request: Request) {
       })
     ) {
       return NextResponse.json(
-        { error: "此時段已額滿或與現有預約重疊，請改選其他時間" },
+        {
+          error: staffName
+            ? `設計師「${staffName}」此時段已有重疊預約，請改選其他時間`
+            : "此時段已額滿或與現有預約重疊，請改選其他時間",
+        },
         { status: 409 },
       );
     }
