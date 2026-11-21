@@ -21,6 +21,7 @@ import {
 import {
   buildDynamicCheckoutPayload,
   cancelEcpayPeriodOrder,
+  checkEcpayGatewayHealth,
   createCardToken,
   createMerchantMemberId,
   createRenewalToken,
@@ -190,6 +191,15 @@ export async function startSubscriptionCheckout(input: {
       redirectUrl: `${siteBaseUrl()}/welcome?storeId=${encodeURIComponent(storeId)}&mock=1`,
       action: null,
       params: null,
+    };
+  }
+
+  const gateway = await checkEcpayGatewayHealth();
+  if (!gateway.ok) {
+    return {
+      ok: false as const,
+      error: gateway.message,
+      code: gateway.code || "ECPAY_GATEWAY",
     };
   }
 

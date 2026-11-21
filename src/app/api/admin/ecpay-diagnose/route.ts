@@ -32,7 +32,7 @@ export async function GET() {
     TradeDesc: "diagnose",
     ItemName: "diagnose item",
     ReturnURL: "https://taiwanbiz.vercel.app/api/webhooks/ecpay",
-    ChoosePayment: "Credit",
+    ChoosePayment: "ALL",
     EncryptType: "1",
   };
   const mac = buildCheckMacValue(sample);

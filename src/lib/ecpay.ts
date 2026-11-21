@@ -42,6 +42,140 @@ export function merchantId() {
   return process.env.ECPAY_MERCHANT_ID?.trim() || "3002607";
 }
 
+/** Prefer ALL — Credit alone returns 10200074 when card collection is closed. */
+export function getEcpayChoosePayment(): string {
+  const raw = (process.env.ECPAY_CHOOSE_PAYMENT || "").trim().toLowerCase();
+  const map: Record<string, string> = {
+    all: "ALL",
+    credit: "Credit",
+    webatm: "WebATM",
+    atm: "ATM",
+    cvs: "CVS",
+    barcode: "BARCODE",
+  };
+  if (!raw) return "ALL";
+  return map[raw] || process.env.ECPAY_CHOOSE_PAYMENT?.trim() || "ALL";
+}
+
+/** ECPay TradeDesc/ItemName: keep CJK/alnum/safe punctuation only. */
+export function sanitizeEcpayText(value: string, maxLen: number): string {
+  return value
+    .replace(/[^\u4e00-\u9fffA-Za-z0-9\s_\-.#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen);
+}
+
+export const ECPAY_CREDENTIAL_ERROR =
+  "綠界金流憑證異常（錯誤 10200074）：商店代號與 HashKey／HashIV 不成對，或全方位金流收款尚未開通。請到綠界廠商專區「系統介接設定 → 全方位金流」重新複製 Hash（不要用物流金鑰），更新 Vercel 的 ECPAY_MERCHANT_ID／ECPAY_HASH_KEY／ECPAY_HASH_IV 後再試。";
+
+export type EcpayGatewayHealth = {
+  ok: boolean;
+  code?: string | null;
+  message: string;
+  merchantId?: string;
+  mode?: "live" | "mock";
+  checkedAt: string;
+};
+
+const HEALTH_TTL_MS = 60_000;
+let healthCache: { at: number; value: EcpayGatewayHealth } | null = null;
+
+/** Throwaway probe — avoid sending shoppers to ECPay's blank 交易失敗 page. */
+export async function checkEcpayGatewayHealth(
+  options?: { force?: boolean },
+): Promise<EcpayGatewayHealth> {
+  const now = Date.now();
+  if (
+    !options?.force &&
+    healthCache &&
+    now - healthCache.at < HEALTH_TTL_MS
+  ) {
+    return healthCache.value;
+  }
+
+  if (ecpayMode() === "mock") {
+    const value: EcpayGatewayHealth = {
+      ok: true,
+      mode: "mock",
+      message: "示範模式（未設定綠界憑證）",
+      checkedAt: new Date().toISOString(),
+    };
+    healthCache = { at: now, value };
+    return value;
+  }
+
+  const mid = merchantId();
+  const probeNo = `HLTH${Date.now().toString(36).toUpperCase()}`.slice(0, 20);
+  const params: Record<string, string> = {
+    MerchantID: mid,
+    MerchantTradeNo: probeNo,
+    MerchantTradeDate: formatTradeDate(new Date()),
+    PaymentType: "aio",
+    TotalAmount: "100",
+    TradeDesc: "Nova Crest Pulse gateway health",
+    ItemName: "Nova Crest Pulse gateway probe x1",
+    ReturnURL: webhookUrl(),
+    ChoosePayment: getEcpayChoosePayment(),
+    EncryptType: "1",
+  };
+  params.CheckMacValue = buildCheckMacValue(params);
+
+  try {
+    const res = await fetch(aioActionUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      },
+      body: new URLSearchParams(params).toString(),
+      redirect: "manual",
+      signal: AbortSignal.timeout(12000),
+    });
+    const text = await res.text();
+    const code = (text.match(/1020\d{4}/) || [])[0] || null;
+    const msg =
+      (text.match(/訊息說明[：:]\s*([^<\n]+)/) || [])[1]?.trim() || null;
+    const ok =
+      /付款方式|信用卡|交易金額|ATM|超商/.test(text) &&
+      !/交易失敗/.test(text);
+
+    const value: EcpayGatewayHealth = ok
+      ? {
+          ok: true,
+          merchantId: mid,
+          mode: "live",
+          message: "綠界金流可用",
+          checkedAt: new Date().toISOString(),
+        }
+      : {
+          ok: false,
+          code,
+          merchantId: mid,
+          mode: "live",
+          message:
+            code === "10200074"
+              ? ECPAY_CREDENTIAL_ERROR
+              : msg || "綠界拒絕結帳，請稍後再試或聯絡客服",
+          checkedAt: new Date().toISOString(),
+        };
+    healthCache = { at: now, value };
+    return value;
+  } catch (error) {
+    const value: EcpayGatewayHealth = {
+      ok: false,
+      merchantId: mid,
+      mode: "live",
+      message:
+        error instanceof Error
+          ? `無法連線綠界金流：${error.message}`
+          : "無法連線綠界金流，請稍後再試",
+      checkedAt: new Date().toISOString(),
+    };
+    healthCache = { at: now, value };
+    return value;
+  }
+}
+
 export function siteBaseUrl() {
   return (
     process.env.AUTH_URL?.replace(/\/$/, "") ||
@@ -187,7 +321,7 @@ export function buildPeriodOrderPayload(input: {
   const planName =
     input.planName ||
     (input.planType ? `拓脈訂閱-${input.planType}` : "拓脈訂閱");
-  const itemName = `拓脈 ${planName}`.slice(0, 200);
+  const safePlan = sanitizeEcpayText(planName, 80);
   // TotalAmount 必須與 PeriodAmount 相同
   const pay = String(amount);
 
@@ -197,12 +331,15 @@ export function buildPeriodOrderPayload(input: {
     MerchantTradeDate: formatTradeDate(new Date()),
     PaymentType: "aio",
     TotalAmount: pay,
-    TradeDesc: `Nova Crest Pulse - ${planName}`.slice(0, 200),
-    ItemName: itemName,
+    TradeDesc: sanitizeEcpayText(`Nova Crest Pulse ${safePlan}`, 200),
+    ItemName: sanitizeEcpayText(
+      `Nova Crest Pulse ${safePlan} period x1`,
+      200,
+    ),
     ReturnURL: webhookUrl(),
     OrderResultURL: clientReturnUrl(input.storeId),
     ClientBackURL: clientReturnUrl(input.storeId),
-    ChoosePayment: "Credit",
+    ChoosePayment: "Credit", // 定期定額必須 Credit；未開通時請改走一次付清
     EncryptType: "1",
     PeriodAmount: pay,
     PeriodType: "M",
@@ -248,22 +385,25 @@ export function buildAioCheckoutPayload(input: {
     listAmount,
     Boolean(input.isFoundingMember),
   );
-  const itemName = `拓脈 ${input.planName}`.slice(0, 200);
+  // Prefer ALL for「信用卡一次付清」so ECPay only lists methods the merchant
+  // actually enabled. Hardcoding Credit alone surfaces 10200074 when card
+  // collection is closed (same lesson as NovaOS hub).
   const choosePayment =
     input.paymentType === "atm"
       ? "ATM"
       : input.paymentType === "cvs"
         ? "CVS"
-        : "Credit";
+        : getEcpayChoosePayment();
 
+  const safePlan = sanitizeEcpayText(input.planName || "subscription", 80);
   const params: Record<string, string> = {
     MerchantID: merchantId(),
     MerchantTradeNo: input.orderId,
     MerchantTradeDate: formatTradeDate(new Date()),
     PaymentType: "aio",
     TotalAmount: String(amount),
-    TradeDesc: `Nova Crest Pulse - ${input.planName}`.slice(0, 200),
-    ItemName: itemName,
+    TradeDesc: sanitizeEcpayText(`Nova Crest Pulse ${safePlan}`, 200),
+    ItemName: sanitizeEcpayText(`Nova Crest Pulse ${safePlan} x1`, 200),
     ReturnURL: webhookUrl(),
     OrderResultURL: clientReturnUrl(input.storeId),
     ClientBackURL: clientReturnUrl(input.storeId),
