@@ -138,6 +138,8 @@ function slotConflicts(input: {
   }
 
   return listBookingsForStoreDb(input.storeSlug).some((b) => {
+    // 取消後自動釋放時段：cancelled 不佔用衝突檢查
+    if ((b.status || "confirmed") === "cancelled") return false;
     const parts = toTaipeiDateAndTime(b.startsAt);
     if (!parts || parts.date !== input.dateYmd) return false;
     if (input.staffName && input.staffName !== "不指定") {
@@ -179,6 +181,7 @@ async function buildSlots(input: {
   );
   const candidates = listCandidateSlotStarts(hours, input.dateYmd, 30);
   const dayCount = listBookingsForStoreDb(input.storeSlug).filter((b) => {
+    if ((b.status || "confirmed") === "cancelled") return false;
     const parts = toTaipeiDateAndTime(b.startsAt);
     return parts?.date === input.dateYmd;
   }).length;
