@@ -34,11 +34,17 @@ export default function OpenGraphImage() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div
-            style={{ fontSize: 58, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15 }}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              fontSize: 58,
+              fontWeight: 700,
+              letterSpacing: "-0.03em",
+              lineHeight: 1.15,
+            }}
           >
-            美業與美髮工作室的
-            <br />
-            極速預約官網
+            <span>美業與美髮工作室的</span>
+            <span>極速預約官網</span>
           </div>
           <div style={{ fontSize: 28, lineHeight: 1.45, maxWidth: 860, color: "#f0e4da" }}>
             線上預約、防撞期排班、離峰自動折扣與 LINE 即時通知，開店當日即可接單。
