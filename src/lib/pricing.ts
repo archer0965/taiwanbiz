@@ -41,7 +41,7 @@ export const marketTypes: MarketType[] = [
 ];
 
 export const PRICING_NOTE =
-  "所有方案皆可隨時升降級。先註冊並登入後台，再點「開始免費試用七天」開通全功能（註冊拓新雲端或本站帳號本身不會開始試用）。訂閱費用為拓脈平台月費／年費，與店內現場收款無關。價格與折扣以拓新雲端主站（paycheck.com.de）為權威；早鳥限定 15 名（本站獨立計算）終身月繳 9 折、半年 85 折、整年 8 折。訂閱管家為永久免費個人工具，不含在拓脈付費方案內。忘記續費可保留網站 30 天。";
+  "所有方案皆可隨時升降級。先註冊並登入後台，再點「開始免費試用七天」開通全功能（註冊拓新雲端或本站帳號本身不會開始試用）。訂閱費用為拓脈平台月費／年費，與店內現場收款無關。價格與折扣以拓新雲端主站（paycheck.com.de）為權威：早鳥／一般試用 7 天、特約店家／推廣大使 14 天；早鳥限定 15 名（本站獨立計算）終身月繳 9 折、半年 85 折、整年 8 折；特約／大使續約月 9／半年 82／年 75 折。訂閱管家為永久免費個人工具，不含在拓脈付費方案內。忘記續費可保留網站 30 天。";
 
 /** @deprecated 網拍方案已下架；保留常數避免舊匯入炸掉 */
 export const SHOP_PRICING_NOTE =
@@ -81,7 +81,8 @@ export function formatTwd(amount: number) {
 }
 
 /**
- * 早鳥（創始）終身續約折扣：月繳 9 折／半年 85 折／年繳 8 折。
+ * 早鳥（創始）終身續約折扣 — hub TIER_META.early_bird：
+ * 月繳 9 折／半年 85 折／年繳 8 折。
  * FOUNDING_MEMBER_RATE 保留為年繳倍率，相容舊呼叫。
  */
 export const FOUNDING_CYCLE_RATES = {
@@ -96,7 +97,18 @@ export type FoundingBillingCycle = keyof typeof FOUNDING_CYCLE_RATES;
 /** @deprecated 請改用 FOUNDING_CYCLE_RATES；預設對齊年繳 8 折舊行為時請顯式傳 cycle */
 export const FOUNDING_MEMBER_RATE = FOUNDING_CYCLE_RATES.annual;
 
-/** 早鳥名額上限（拓脈本站獨立計算，與 NovaStore 分開） */
+/**
+ * 特約店家／推廣大使續約折扣 — hub TIER_META.vip：
+ * 月繳 9 折／半年 82 折／年繳 75 折（人工審核後套用）。
+ */
+export const PARTNER_CYCLE_RATES = {
+  monthly: 0.9,
+  half_yearly: 0.82,
+  annual: 0.75,
+  yearly: 0.75,
+} as const;
+
+/** 早鳥名額上限（拓脈本站獨立計算，對齊 hub MODULE_EARLY_BIRD_MAX = 15） */
 export const FOUNDING_MEMBER_LIMIT = 15;
 
 /**
@@ -104,11 +116,14 @@ export const FOUNDING_MEMBER_LIMIT = 15;
  */
 export const FOUNDING_FREE_YEARS = 10;
 
-/** 後台「開始免費試用七天」開通天數（早鳥與一般相同） */
+/** 早鳥試用天數（hub TIER_META.early_bird.trialDays） */
 export const FOUNDING_TRIAL_DAYS = 7;
 
-/** 早鳥額滿後一般新店試用天數（同為 7 天，無終身折扣） */
+/** 一般新店試用天數（hub TIER_META.general.trialDays；與早鳥同為 7） */
 export const STANDARD_TRIAL_DAYS = 7;
+
+/** 特約店家／推廣大使試用天數（hub TIER_META.vip.trialDays） */
+export const PARTNER_TRIAL_DAYS = 14;
 
 /** 後台 CTA */
 export const START_TRIAL_BUTTON_LABEL = "開始免費試用七天";
@@ -121,15 +136,22 @@ export const TRIAL_LABEL = "免費全功能試用期";
 export const FOUNDING_FREE_LABEL =
   "早鳥限定 15 名：後台開始試用後 7 天全功能，續約終身月 9／半年 85／年 8 折";
 
-/** 依是否創始回傳試用天數（統一 7 天） */
-export function trialDaysFor(_isFoundingMember: boolean) {
+/**
+ * 試用天數：特約／大使 14；早鳥與一般皆 7（對齊 hub STANDARD／founding／vip）。
+ */
+export function trialDaysFor(
+  isFoundingMember: boolean,
+  opts?: { isPartnerOrAmbassador?: boolean },
+) {
+  if (opts?.isPartnerOrAmbassador) return PARTNER_TRIAL_DAYS;
+  void isFoundingMember;
   return STANDARD_TRIAL_DAYS;
 }
 
 /** 前 15 組早鳥優惠項目（主頁浮動框／定價文案共用） */
 export const FOUNDING_BENEFITS = [
   "後台點「開始免費試用七天」後開通全功能（註冊本身不會開始試用）",
-  `全功能免費試用 ${FOUNDING_TRIAL_DAYS} 天`,
+  `全功能免費試用 ${FOUNDING_TRIAL_DAYS} 天（早鳥／一般；特約／大使為 ${PARTNER_TRIAL_DAYS} 天）`,
   "早鳥終身續約：月繳 9 折、半年 85 折、整年 8 折",
   "試用到期前 3 天與前 1 天自動提醒續約",
   "早鳥資格終身有效：升降級後續費仍享折扣",
@@ -287,7 +309,7 @@ export const pricingCategories: PricingCategory[] = [
     label: "自主經營",
     enLabel: "Self-Serve",
     description:
-      "基礎版打通預約與通知；旗艦版加上微型官網與刮刮樂留客。先註冊登入後台，再點「開始免費試用七天」：早鳥 15 名終身月 9／半年 85／年 8 折（本站獨立名額）。",
+      "基礎版打通預約與通知；旗艦版加上微型官網與刮刮樂留客。先註冊登入後台，再點「開始免費試用七天」：早鳥／一般 7 天試用；早鳥 15 名終身月 9／半年 85／年 8 折（本站獨立名額）；特約／大使 14 天試用（月 9／半年 82／年 75 折）。",
     plans: [
       {
         id: "starter",
@@ -337,8 +359,8 @@ export const shopPricingCategory = {
 export const PRICING_FAQS = [
   {
     id: "q0",
-    question: "前十組註冊真的不用付費嗎？和免費試用有什麼差別？",
-    answer: `早鳥名額限量 ${FOUNDING_MEMBER_LIMIT} 名（拓脈獨立計算）：於後台點「開始免費試用七天」後開通 ${FOUNDING_TRIAL_DAYS} 天全功能，並鎖定終身月繳 9 折、半年 85 折、整年 8 折。註冊帳號本身不會開始試用。額滿後仍可開始 ${STANDARD_TRIAL_DAYS} 天試用，續約依原價。忘記續費時網站可保留 30 天。`,
+    question: "早鳥、一般與特約的試用天數有什麼差別？",
+    answer: `以拓新雲端主站為準：早鳥名額限量 ${FOUNDING_MEMBER_LIMIT} 名（拓脈獨立計算），於後台點「開始免費試用七天」後開通 ${FOUNDING_TRIAL_DAYS} 天全功能，並鎖定終身月繳 9 折、半年 85 折、整年 8 折。額滿後一般新店同為 ${STANDARD_TRIAL_DAYS} 天試用、續約依原價。特約店家／推廣大使經主站人工審核後為 ${PARTNER_TRIAL_DAYS} 天試用，續約月 9／半年 82／年 75 折。註冊帳號本身不會開始試用。忘記續費時網站可保留 30 天。`,
   },
   {
     id: "q1",
@@ -380,6 +402,6 @@ export const PRICING_FAQS = [
     id: "q7",
     question: "年繳方案的優惠折扣是怎麼計算的？",
     answer:
-      "年繳以 NovaOS 主站為準（月費 × 12）：基礎版 NT$3,588；旗艦版 NT$5,988。早鳥 15 名於後台開始試用後，續約終身月 9／半年 85／年 8 折。",
+      `年繳以 NovaOS 主站為準（月費 × 12）：基礎版 NT$3,588；旗艦版 NT$5,988。早鳥 ${FOUNDING_MEMBER_LIMIT} 名於後台開始試用後，續約終身月 9／半年 85／年 8 折；特約／大使為月 9／半年 82／年 75 折。`,
   },
 ];

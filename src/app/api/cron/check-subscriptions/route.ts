@@ -21,7 +21,7 @@ function authorized(request: Request) {
 
 /**
  * 每日排程：
- * - 創始試用／正式訂閱：到期前 3 天與前 1 天提醒；一般 3 天試用僅剩餘 1 天提醒
+ * - 試用／正式訂閱：到期前 3 天與前 1 天提醒（早鳥／一般 7 天；特約／大使 14 天）
  * - 到期未續費 → Pending（保留網站 30 天）；寬限結束／解約期滿 → Suspended
  * - 每月撥款批次（15–20 日）
  * Vercel Cron：GET /api/cron/check-subscriptions（vercel.json 每日 01:00 UTC）

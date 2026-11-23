@@ -1,4 +1,6 @@
 import type { BookingRecord } from "@/lib/bookings";
+import { toTaipeiDateAndTime } from "@/lib/bookings";
+import { slotConflicts } from "@/lib/booking-conflicts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 
@@ -11,6 +13,7 @@ const DATA_FILE = path.join(DATA_DIR, "all.json");
 
 const g = globalThis as typeof globalThis & {
   __taiwanbizBookingsDiskCache?: BookingRecord[];
+  __taiwanbizBookingsWriteChain?: Promise<unknown>;
 };
 
 function ensureDir() {
@@ -40,11 +43,69 @@ function writeAll(list: BookingRecord[]) {
   writeFileSync(DATA_FILE, JSON.stringify(trimmed, null, 2), "utf8");
 }
 
+/** Serialize disk mutations within this process (concurrent booking race). */
+function withBookingWriteLock<T>(fn: () => T): Promise<T> {
+  const prev = g.__taiwanbizBookingsWriteChain || Promise.resolve();
+  let release!: (value: T | PromiseLike<T>) => void;
+  let fail!: (reason?: unknown) => void;
+  const next = new Promise<T>((resolve, reject) => {
+    release = resolve;
+    fail = reject;
+  });
+  g.__taiwanbizBookingsWriteChain = prev
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        release(fn());
+      } catch (error) {
+        fail(error);
+      }
+      await next.catch(() => undefined);
+    });
+  return next;
+}
+
 export function saveBookingDb(booking: BookingRecord) {
   const list = readAll();
   list.unshift(booking);
   writeAll(list);
   return booking;
+}
+
+/**
+ * 原子寫入：同一 process 內序列化衝突檢查＋存檔。
+ * cancelled 預約不佔用（slotConflicts 已略過）。
+ * 回傳 conflict=true 時未寫入。
+ */
+export async function saveBookingIfSlotFreeDb(input: {
+  booking: BookingRecord;
+  dateYmd: string;
+  timeHm: string;
+  durationMinutes: number;
+  bufferMinutes: number;
+  staffName?: string;
+  blockedSlots: Array<{ date: string; time: string }>;
+}): Promise<{ ok: true; booking: BookingRecord } | { ok: false; conflict: true }> {
+  return withBookingWriteLock(() => {
+    // 重新讀盤，避免快取落後於同機其他寫入
+    g.__taiwanbizBookingsDiskCache = undefined;
+    const bookings = listBookingsForStoreDb(input.booking.storeSlug);
+    if (
+      slotConflicts({
+        bookings,
+        dateYmd: input.dateYmd,
+        timeHm: input.timeHm,
+        durationMinutes: input.durationMinutes,
+        bufferMinutes: input.bufferMinutes,
+        staffName: input.staffName,
+        blockedSlots: input.blockedSlots,
+      })
+    ) {
+      return { ok: false as const, conflict: true as const };
+    }
+    saveBookingDb(input.booking);
+    return { ok: true as const, booking: input.booking };
+  });
 }
 
 export function listBookingsDb() {
@@ -142,4 +203,17 @@ export function updateBookingDb(
   Object.assign(hit, patch);
   writeAll(list);
   return hit;
+}
+
+/** 取消後釋放時段：僅更新 status；衝突檢查會略過 cancelled */
+export async function cancelBookingReleaseSlotDb(id: string) {
+  return withBookingWriteLock(() => {
+    const updated = updateBookingDb(id, { status: "cancelled" });
+    return updated;
+  });
+}
+
+/** Helper for callers that already have taipei parts */
+export function bookingTaipeiParts(booking: BookingRecord) {
+  return toTaipeiDateAndTime(booking.startsAt);
 }

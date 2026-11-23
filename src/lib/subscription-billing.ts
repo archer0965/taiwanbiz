@@ -38,6 +38,7 @@ import {
 import {
   applyFoundingDiscount,
   FOUNDING_MEMBER_LIMIT,
+  PARTNER_TRIAL_DAYS,
   STANDARD_TRIAL_DAYS,
   START_TRIAL_BUTTON_LABEL,
   type CheckoutPaymentType,
@@ -384,12 +385,8 @@ export async function handlePaymentWebhook(input: {
 }
 
 /**
- * 前 15 組創始：占用名額並開通 14 天免費試用。
- * 試用結束後請以綠界依終身 8 折續費（不再免付費展延）。
- */
-/**
  * 前台註冊店家：不開始試用、不占用早鳥名額。
- * 需至後台點「開始免費試用七天」才開通全功能。
+ * 需至後台點「開始免費試用七天」才開通全功能（早鳥／一般 7 天；特約／大使 14 天由主站審核）。
  */
 export async function registerStoreAwaitingTrial(input: {
   storeId: string;
@@ -639,12 +636,13 @@ export async function startFreeTrial(input: {
   await ensureStoreContentForTenant(storeId);
 
   try {
-    await sendTrialStartedEmail({
+      await sendTrialStartedEmail({
       storeName: tenant.name,
       ownerEmail: tenant.ownerEmail,
       storeId,
       planType,
       trialEndsAt,
+      trialDays: days,
       isFoundingMember: claimFounding,
       listAmount,
     });
@@ -677,7 +675,7 @@ export async function startFreeTrial(input: {
     earlyBird: claimFounding,
     founding: foundingAfter,
     message: claimFounding
-      ? `已開通 ${days} 天全功能試用，並取得早鳥資格（終身月繳 9 折／半年 85 折／年繳 8 折；月繳約 NT$ ${renewPreview.toLocaleString("zh-TW")}）。早鳥剩餘 ${foundingAfter.remaining}/${FOUNDING_MEMBER_LIMIT}。`
+      ? `已開通 ${days} 天全功能試用，並取得早鳥資格（終身月繳 9 折／半年 85 折／年繳 8 折；月繳約 NT$ ${renewPreview.toLocaleString("zh-TW")}）。早鳥剩餘 ${foundingAfter.remaining}/${FOUNDING_MEMBER_LIMIT}。（特約／大使為 ${PARTNER_TRIAL_DAYS} 天試用，由主站審核）`
       : `已開通 ${days} 天全功能試用。早鳥名額已滿，續約依標準方案計價。`,
     redirectUrl: `/dashboard/billing`,
   };
@@ -938,8 +936,7 @@ function hasRenewedOnOrAfterDayBeforeExpiry(
 
 /**
  * 到期提醒：
- * - 創始 14 天試用／正式訂閱：到期前 3 天與前 1 天
- * - 一般 3 天試用：僅到期前 1 天
+ * - 早鳥／一般 7 天試用、特約／大使 14 天試用、正式訂閱：到期前 3 天與前 1 天
  * 若已在到期前一日（含）完成續費則不通知。
  */
 export async function runExpiryReminderCron(now = new Date()) {
@@ -952,6 +949,7 @@ export async function runExpiryReminderCron(now = new Date()) {
   const { pushSellerNotification } = await import(
     "@/lib/seller-notifications-db.server"
   );
+  const { reportToHub } = await import("@/lib/novaos-telemetry");
   const tenants = await listTenantDb();
   const reminded: string[] = [];
   const skipped: string[] = [];
@@ -977,15 +975,8 @@ export async function runExpiryReminderCron(now = new Date()) {
     }
 
     const daysLeft = dayOffsetFromToday(expiresLabel, todayYmd);
-    // 一般 3 天試用：只在剩餘 1 天提醒
-    const shortNonFoundingTrial =
-      onTrial && !tenant.isFoundingMember;
-    if (shortNonFoundingTrial) {
-      if (daysLeft !== 1) {
-        skipped.push(`${tenant.storeId}:short-trial-not-d1`);
-        continue;
-      }
-    } else if (daysLeft !== 3 && daysLeft !== 1) {
+    // 早鳥／一般／特約／正式訂閱：統一 D-3 與 D-1
+    if (daysLeft !== 3 && daysLeft !== 1) {
       skipped.push(`${tenant.storeId}:not-window`);
       continue;
     }
@@ -1040,13 +1031,23 @@ export async function runExpiryReminderCron(now = new Date()) {
       });
 
       const lineText = onTrial
-        ? `【試用即將結束】${tenant.name} 試用將於 ${expiresLabel} 結束（尚餘約 ${daysText}），請登入後台以${tenant.isFoundingMember ? "創始 8 折" : "原價"}完成首次付費。逾期仍可保留網站 ${GRACE_PERIOD_DAYS} 天。\n${renewUrl}`
+        ? `【試用即將結束】${tenant.name} 試用將於 ${expiresLabel} 結束（尚餘約 ${daysText}），請登入後台以${tenant.isFoundingMember ? "早鳥折扣" : "原價"}完成首次付費。逾期仍可保留網站 ${GRACE_PERIOD_DAYS} 天。\n${renewUrl}`
         : `【續費提醒】${tenant.name} 方案將於 ${expiresLabel} 到期（尚餘約 ${daysText}）。請登入後台續費；忘記續費仍可保留網站 ${GRACE_PERIOD_DAYS} 天。\n${renewUrl}`;
 
+      let lineFailed = false;
       for (const uid of parseLineUserIds(
         process.env.BOOKING_SELLER_LINE_USER_IDS,
       )) {
-        await pushLineText(uid, lineText);
+        const lineResult = await pushLineText(uid, lineText);
+        if (!lineResult.ok) {
+          lineFailed = true;
+          void reportToHub({
+            kind: "notify_failure",
+            severity: "warn",
+            message: `expiry reminder LINE failed: ${lineResult.error}`,
+            meta: { storeId: tenant.storeId, channel: "line", uid },
+          });
+        }
       }
 
       await patchTenantDb(tenant.storeId, {
@@ -1055,9 +1056,22 @@ export async function runExpiryReminderCron(now = new Date()) {
           : { expiryReminderD1ForExpiresAt: expiresLabel }),
         expiryReminderSentAt: now.toISOString(),
       });
-      reminded.push(`${tenant.storeId}:d${daysLeft}`);
+      reminded.push(
+        lineFailed
+          ? `${tenant.storeId}:d${daysLeft}:line-partial-fail`
+          : `${tenant.storeId}:d${daysLeft}`,
+      );
     } catch (error) {
       console.error("[expiry-reminder]", tenant.storeId, error);
+      void reportToHub({
+        kind: "notify_failure",
+        severity: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "expiry reminder failed",
+        meta: { storeId: tenant.storeId },
+      });
       skipped.push(`${tenant.storeId}:error`);
     }
   }

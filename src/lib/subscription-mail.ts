@@ -254,31 +254,38 @@ function formatLocal(iso: string) {
   return new Date(iso).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 }
 
-/** 寄給店主：14 天試用已開通 */
+/** 寄給店主：試用已開通（天數對齊 STANDARD／FOUNDING／PARTNER） */
 export async function sendTrialStartedEmail(input: {
   storeName: string;
   ownerEmail: string;
   storeId: string;
   planType?: string;
   trialEndsAt: string;
+  trialDays?: number;
   isFoundingMember?: boolean;
   listAmount?: number | null;
 }) {
+  const { STANDARD_TRIAL_DAYS } = await import("@/lib/pricing");
+  const days =
+    typeof input.trialDays === "number" && input.trialDays > 0
+      ? Math.round(input.trialDays)
+      : STANDARD_TRIAL_DAYS;
   const base = siteBase();
   const storeUrl = `${base}/stores/${encodeURIComponent(input.storeId)}`;
   const billingUrl = `${base}/dashboard/billing`;
   const loginUrl = `${base}/login`;
   const ends = formatLocal(input.trialEndsAt);
-  const subject = `【拓脈試用】${input.storeName} 已開通 14 天免費試用`;
+  const subject = `【拓脈試用】${input.storeName} 已開通 ${days} 天免費試用`;
   const text = [
     "您的拓脈店家已開通免費試用：",
     "",
     `店家：${input.storeName}`,
     `storeId：${input.storeId}`,
+    `試用天數：${days} 天`,
     `試用截止：${ends}`,
     input.isFoundingMember
-      ? "創始會員：是（正式訂閱後終身月費 8 折）"
-      : "創始會員：否",
+      ? "早鳥資格：是（正式訂閱後終身月 9／半年 85／年 8 折）"
+      : "早鳥資格：否",
     "",
     "試用期間享全功能；截止前請登入後台「訂閱付款」完成正式訂閱，以免服務暫停。",
     `前台：${storeUrl}`,
@@ -288,7 +295,7 @@ export async function sendTrialStartedEmail(input: {
 
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a">
-      <h2 style="margin:0 0 12px">【拓脈】14 天免費試用已開通</h2>
+      <h2 style="margin:0 0 12px">【拓脈】${days} 天免費試用已開通</h2>
       <p>店家 <b>${escapeHtml(input.storeName)}</b> 已可使用全功能。</p>
       <ul>
         <li>試用截止：${escapeHtml(ends)}</li>
@@ -564,8 +571,8 @@ export async function sendAdminNewStoreNotify(input: {
       ? `月費原價：NT$ ${input.listAmount.toLocaleString("zh-TW")}`
       : "",
     input.isFoundingMember
-      ? "創始會員：是（14 天試用後續費終身 8 折）"
-      : "創始會員：否",
+      ? "早鳥資格：是（7 天試用後續費終身月 9／半年 85／年 8 折）"
+      : "早鳥資格：否",
     input.billingMethod ? `付款方式：${input.billingMethod}` : "",
     "",
     `前台：${storeUrl}`,

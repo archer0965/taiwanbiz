@@ -13,7 +13,9 @@ import {
   parseLineUserIds,
   pushLineImage,
   pushLineText,
+  type LinePushResult,
 } from "@/lib/line-messaging";
+import { reportToHub } from "@/lib/novaos-telemetry";
 import { formatBookingDiscountLines } from "@/lib/off-peak-discounts";
 
 function siteBase() {
@@ -57,15 +59,50 @@ export type BookingNotifyTargets = {
   sellerLineUserIds: string[];
 };
 
+export type BookingNotifySummary = {
+  ok: boolean;
+  results: Record<string, unknown>;
+  failures: string[];
+};
+
+function isLineFailure(result: LinePushResult) {
+  return result.ok === false;
+}
+
+async function reportNotifyFailure(
+  message: string,
+  meta: Record<string, unknown>,
+) {
+  void reportToHub({
+    kind: "notify_failure",
+    severity: "warn",
+    message,
+    meta: { product: "booking", ...meta },
+  });
+}
+
+function collectFailures(results: Record<string, unknown>): string[] {
+  const failures: string[] = [];
+  for (const [key, value] of Object.entries(results)) {
+    if (!value || typeof value !== "object") continue;
+    const row = value as { ok?: boolean; error?: string; skipped?: boolean };
+    if (row.ok === false) {
+      failures.push(`${key}:${row.error || "failed"}`);
+    }
+  }
+  return failures;
+}
+
 /**
  * 預約成立後雙向通知：
  * - 顧客：Email／LINE 預約成功
  * - 店家／服務人員：Email／LINE 即時接單
+ * 任一實際送出失敗 → ok=false，並回報 hub telemetry（不宣稱成功）
  */
 export async function notifyBookingCreated(
   booking: BookingRecord,
   targets: BookingNotifyTargets,
-) {
+): Promise<BookingNotifySummary> {
   const results: Record<string, unknown> = {};
   const block = bookingTextBlock(booking);
 
@@ -81,19 +118,32 @@ export async function notifyBookingCreated(
   }
 
   for (const userId of targets.sellerLineUserIds) {
-    results[`sellerLine:${userId}`] = await pushLineText(
+    const lineResult = await pushLineText(
       userId,
       `【新預約接單】\n${block}`,
     );
-    // https 參考圖另外推播預覽
+    results[`sellerLine:${userId}`] = lineResult;
+    if (isLineFailure(lineResult)) {
+      await reportNotifyFailure(`booking created seller LINE failed: ${lineResult.error}`, {
+        bookingId: booking.id,
+        storeSlug: booking.storeSlug,
+        channel: "line",
+        role: "seller",
+      });
+    }
     for (const [idx, url] of (booking.referenceImages || [])
       .slice(0, 3)
       .entries()) {
       if (!/^https?:\/\//i.test(url)) continue;
-      results[`sellerLineImage:${userId}:${idx}`] = await pushLineImage(
-        userId,
-        url,
-      );
+      const img = await pushLineImage(userId, url);
+      results[`sellerLineImage:${userId}:${idx}`] = img;
+      if (isLineFailure(img)) {
+        await reportNotifyFailure(`booking created LINE image failed: ${img.error}`, {
+          bookingId: booking.id,
+          storeSlug: booking.storeSlug,
+          channel: "line_image",
+        });
+      }
     }
   }
 
@@ -112,21 +162,49 @@ export async function notifyBookingCreated(
   }
 
   if (booking.customerLineUserId?.trim()) {
-    results.customerLine = await pushLineText(
+    const customerLine = await pushLineText(
       booking.customerLineUserId.trim(),
       `【預約成功】${booking.storeName}\n${block}\n\n請準時到店；行前我們會再提醒您。`,
     );
+    results.customerLine = customerLine;
+    if (isLineFailure(customerLine)) {
+      await reportNotifyFailure(
+        `booking created customer LINE failed: ${customerLine.error}`,
+        {
+          bookingId: booking.id,
+          storeSlug: booking.storeSlug,
+          channel: "line",
+          role: "customer",
+        },
+      );
+    }
   }
 
-  return results;
+  const failures = collectFailures(results);
+  if (failures.length) {
+    await reportNotifyFailure(
+      `booking created notify partial failure (${failures.length})`,
+      {
+        bookingId: booking.id,
+        storeSlug: booking.storeSlug,
+        failures,
+      },
+    );
+  }
+
+  return { ok: failures.length === 0, results, failures };
 }
 
-/** 行前提醒（顧客 Email／LINE） */
-export async function notifyBookingReminder(booking: BookingRecord) {
+/** 行前提醒（顧客 Email／LINE）— 失敗不上報成功、不上標記已送 */
+export async function notifyBookingReminder(
+  booking: BookingRecord,
+): Promise<BookingNotifySummary> {
   const results: Record<string, unknown> = {};
   const block = bookingTextBlock(booking);
+  let attempted = false;
 
   if (booking.customerEmail?.trim()) {
+    attempted = true;
     try {
       results.customerEmail = await sendBookingCustomerReminderEmail(
         booking.customerEmail.trim(),
@@ -141,14 +219,49 @@ export async function notifyBookingReminder(booking: BookingRecord) {
   }
 
   if (booking.customerLineUserId?.trim()) {
-    results.customerLine = await pushLineText(
+    attempted = true;
+    const customerLine = await pushLineText(
       booking.customerLineUserId.trim(),
       `【行前提醒】${booking.storeName}\n您的預約即將到來：\n${block}`,
     );
+    results.customerLine = customerLine;
+    if (isLineFailure(customerLine)) {
+      await reportNotifyFailure(
+        `booking reminder LINE failed: ${customerLine.error}`,
+        {
+          bookingId: booking.id,
+          storeSlug: booking.storeSlug,
+          channel: "line",
+          kind: "reminder",
+        },
+      );
+    }
+  }
+
+  if (!attempted) {
+    results.skipped = "no-customer-channel";
+    // 無通道可送：標記已處理避免 Cron 卡住，但不宣稱推播成功
+    markBookingReminderSentDb(booking.id);
+    return { ok: true, results, failures: [] };
+  }
+
+  const failures = collectFailures(results);
+  if (failures.length) {
+    await reportNotifyFailure(
+      `booking reminder notify failure (${failures.length})`,
+      {
+        bookingId: booking.id,
+        storeSlug: booking.storeSlug,
+        failures,
+        kind: "reminder",
+      },
+    );
+    // 失敗不標記 reminderSentAt，允許 Cron 重試
+    return { ok: false, results, failures };
   }
 
   markBookingReminderSentDb(booking.id);
-  return results;
+  return { ok: true, results, failures: [] };
 }
 
 export function resolveSellerLineTargets(input: {
@@ -171,7 +284,7 @@ export function resolveSellerLineTargets(input: {
 export async function notifyBookingReviewPrompt(
   booking: BookingRecord,
   opts?: { reviewUrl?: string; igHint?: string },
-) {
+): Promise<BookingNotifySummary> {
   const results: Record<string, unknown> = {};
   const reviewUrl =
     opts?.reviewUrl?.trim() ||
@@ -192,22 +305,34 @@ export async function notifyBookingReviewPrompt(
     .filter(Boolean)
     .join("\n");
 
-  let delivered = false;
+  let attempted = false;
   if (booking.customerLineUserId?.trim()) {
-    results.customerLine = await pushLineText(
+    attempted = true;
+    const customerLine = await pushLineText(
       booking.customerLineUserId.trim(),
       text,
     );
-    delivered = true;
+    results.customerLine = customerLine;
+    if (isLineFailure(customerLine)) {
+      await reportNotifyFailure(
+        `booking review LINE failed: ${customerLine.error}`,
+        {
+          bookingId: booking.id,
+          storeSlug: booking.storeSlug,
+          channel: "line",
+          kind: "review",
+        },
+      );
+    }
   }
   if (booking.customerEmail?.trim()) {
+    attempted = true;
     try {
       results.customerEmail = await sendBookingCustomerReviewEmail(
         booking.customerEmail.trim(),
         booking,
         { reviewUrl, igHint },
       );
-      delivered = true;
     } catch (error) {
       results.customerEmail = {
         ok: false,
@@ -216,22 +341,39 @@ export async function notifyBookingReviewPrompt(
     }
   }
 
-  // 無顧客聯絡方式時仍標記已處理，避免 Cron 重複卡住
-  if (!delivered) {
+  if (!attempted) {
     results.skipped = "no-customer-channel";
+    updateBookingDb(booking.id, {
+      reviewPromptSentAt: new Date().toISOString(),
+    });
+    return { ok: true, results, failures: [] };
+  }
+
+  const failures = collectFailures(results);
+  if (failures.length) {
+    await reportNotifyFailure(
+      `booking review notify failure (${failures.length})`,
+      {
+        bookingId: booking.id,
+        storeSlug: booking.storeSlug,
+        failures,
+        kind: "review",
+      },
+    );
+    return { ok: false, results, failures };
   }
 
   updateBookingDb(booking.id, {
     reviewPromptSentAt: new Date().toISOString(),
   });
-  return results;
+  return { ok: true, results, failures: [] };
 }
 
 /** 燙染後自動護理／回購推播（預設完成後 30 天） */
 export async function notifyBookingCareReminder(
   booking: BookingRecord,
   opts?: { messageTemplate?: string },
-) {
+): Promise<BookingNotifySummary> {
   const results: Record<string, unknown> = {};
   const bookingUrl = `${siteBase()}/stores/${encodeURIComponent(booking.storeSlug)}#booking`;
   const template =
@@ -244,17 +386,29 @@ export async function notifyBookingCareReminder(
     .replaceAll("{bookingUrl}", bookingUrl)
     .slice(0, 900);
 
-  let delivered = false;
+  let attempted = false;
   if (booking.customerLineUserId?.trim()) {
-    results.customerLine = await pushLineText(
+    attempted = true;
+    const customerLine = await pushLineText(
       booking.customerLineUserId.trim(),
       text,
     );
-    delivered = true;
+    results.customerLine = customerLine;
+    if (isLineFailure(customerLine)) {
+      await reportNotifyFailure(
+        `booking care LINE failed: ${customerLine.error}`,
+        {
+          bookingId: booking.id,
+          storeSlug: booking.storeSlug,
+          channel: "line",
+          kind: "care",
+        },
+      );
+    }
   }
   if (booking.customerEmail?.trim()) {
+    attempted = true;
     try {
-      // 複用課後關心信通道：主旨改為護理提醒
       results.customerEmail = await sendBookingCustomerReviewEmail(
         booking.customerEmail.trim(),
         {
@@ -266,7 +420,6 @@ export async function notifyBookingCareReminder(
           igHint: "護理回購提醒｜點連結重新預約",
         },
       );
-      delivered = true;
     } catch (error) {
       results.customerEmail = {
         ok: false,
@@ -274,12 +427,30 @@ export async function notifyBookingCareReminder(
       };
     }
   }
-  if (!delivered) {
+  if (!attempted) {
     results.skipped = "no-customer-channel";
+    updateBookingDb(booking.id, {
+      careReminderSentAt: new Date().toISOString(),
+    });
+    return { ok: true, results, failures: [] };
+  }
+
+  const failures = collectFailures(results);
+  if (failures.length) {
+    await reportNotifyFailure(
+      `booking care notify failure (${failures.length})`,
+      {
+        bookingId: booking.id,
+        storeSlug: booking.storeSlug,
+        failures,
+        kind: "care",
+      },
+    );
+    return { ok: false, results, failures };
   }
 
   updateBookingDb(booking.id, {
     careReminderSentAt: new Date().toISOString(),
   });
-  return results;
+  return { ok: true, results, failures: [] };
 }

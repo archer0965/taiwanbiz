@@ -2,6 +2,7 @@
 
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
+import { STANDARD_TRIAL_DAYS } from "@/lib/pricing";
 import { ExternalLink, LayoutDashboard, Store } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -65,7 +66,9 @@ export function WelcomeClient() {
           <div>
             <p className="text-sm font-bold text-white">拓脈 Nova Crest Pulse</p>
             <p className="text-xs text-slate-400">
-              {onTrial ? "14 天免費試用" : "自主訂閱開通"}
+              {onTrial
+                ? `${STANDARD_TRIAL_DAYS} 天免費試用`
+                : "自主訂閱開通"}
             </p>
           </div>
         </div>

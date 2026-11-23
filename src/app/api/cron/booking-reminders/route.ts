@@ -9,6 +9,7 @@ import {
   notifyBookingReminder,
   notifyBookingReviewPrompt,
 } from "@/lib/booking-notify";
+import { reportToHub } from "@/lib/novaos-telemetry";
 import { getStoreContent } from "@/lib/store-content-db.server";
 import { NextResponse } from "next/server";
 
@@ -34,8 +35,8 @@ function authorized(request: Request) {
  * 顧客預約行前提醒＋課後關心／五星好評導流
  * 工作路徑：booking.remindAt（建立時 computeRemindAt）→ 本 Cron 掃描
  * listBookingsDueForReminderDb → notifyBookingReminder（Email／LINE）
- * → markBookingReminderSentDb。已取消預約不會進入到期清單。
- * （課後：服務當日 20:00 或晚間檔次次日 10:00，台北時區）
+ * → markBookingReminderSentDb（僅送達成功時）。已取消預約不會進入到期清單。
+ * 推播失敗回報 hub telemetry，且 ok=false（不宣稱成功）。
  * Vercel Cron：GET /api/cron/booking-reminders（vercel.json）
  */
 export async function GET(request: Request) {
@@ -49,9 +50,34 @@ export async function GET(request: Request) {
   for (const booking of due) {
     try {
       const detail = await notifyBookingReminder(booking);
-      results.push({ id: booking.id, ok: true, detail });
+      results.push({
+        id: booking.id,
+        ok: detail.ok,
+        detail: detail.results,
+      });
+      if (!detail.ok) {
+        void reportToHub({
+          kind: "notify_failure",
+          severity: "warn",
+          message: `cron booking-reminder failed for ${booking.id}`,
+          meta: {
+            bookingId: booking.id,
+            storeSlug: booking.storeSlug,
+            failures: detail.failures,
+          },
+        });
+      }
     } catch (error) {
       console.error("[booking-reminders]", booking.id, error);
+      void reportToHub({
+        kind: "notify_failure",
+        severity: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "booking-reminder cron exception",
+        meta: { bookingId: booking.id, storeSlug: booking.storeSlug },
+      });
       results.push({
         id: booking.id,
         ok: false,
@@ -70,9 +96,22 @@ export async function GET(request: Request) {
         reviewUrl: content?.reviewUrl,
         igHint: content?.reviewIgHint,
       });
-      reviewResults.push({ id: booking.id, ok: true, detail });
+      reviewResults.push({
+        id: booking.id,
+        ok: detail.ok,
+        detail: detail.results,
+      });
     } catch (error) {
       console.error("[booking-review-prompt]", booking.id, error);
+      void reportToHub({
+        kind: "notify_failure",
+        severity: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "booking-review cron exception",
+        meta: { bookingId: booking.id },
+      });
       reviewResults.push({
         id: booking.id,
         ok: false,
@@ -88,7 +127,6 @@ export async function GET(request: Request) {
       const content = await getStoreContent(booking.storeSlug);
       const care = normalizeCareRetargeting(content?.careRetargeting);
       if (!care.enabled) {
-        // 店家已關閉：標記已處理避免重試
         const { updateBookingDb } = await import("@/lib/bookings-db.server");
         updateBookingDb(booking.id, {
           careReminderSentAt: new Date().toISOString(),
@@ -99,9 +137,22 @@ export async function GET(request: Request) {
       const detail = await notifyBookingCareReminder(booking, {
         messageTemplate: care.message,
       });
-      careResults.push({ id: booking.id, ok: true, detail });
+      careResults.push({
+        id: booking.id,
+        ok: detail.ok,
+        detail: detail.results,
+      });
     } catch (error) {
       console.error("[booking-care-reminder]", booking.id, error);
+      void reportToHub({
+        kind: "notify_failure",
+        severity: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "booking-care cron exception",
+        meta: { bookingId: booking.id },
+      });
       careResults.push({
         id: booking.id,
         ok: false,
@@ -110,8 +161,13 @@ export async function GET(request: Request) {
     }
   }
 
+  const anyFail =
+    results.some((r) => !r.ok) ||
+    reviewResults.some((r) => !r.ok) ||
+    careResults.some((r) => !r.ok);
+
   return NextResponse.json({
-    ok: true,
+    ok: !anyFail,
     dueCount: due.length,
     results,
     reviewDueCount: reviewDue.length,

@@ -19,7 +19,7 @@ import {
 } from "@/lib/bookings";
 import {
   listBookingsForStoreDb,
-  saveBookingDb,
+  saveBookingIfSlotFreeDb,
   updateBookingDb,
 } from "@/lib/bookings-db.server";
 import {
@@ -504,7 +504,7 @@ export async function POST(request: Request) {
         );
       }
     }
-    // 同一設計師不可重複預約：POST 與 GET 時段查詢共用 slotConflicts（含 staffName、略過 cancelled）
+    // 預檢衝突；真正防併發寫入在 saveBookingIfSlotFreeDb（序列化檢查＋存檔）
     if (
       slotConflicts({
         bookings: listBookingsForStoreDb(storeSlug),
@@ -641,7 +641,30 @@ export async function POST(request: Request) {
     depositPaidAt: null,
   };
 
-  saveBookingDb(booking);
+  if (!taipei) {
+    return NextResponse.json({ error: "無法解析預約時段" }, { status: 400 });
+  }
+
+  const saved = await saveBookingIfSlotFreeDb({
+    booking,
+    dateYmd: taipei.date,
+    timeHm: taipei.time,
+    durationMinutes,
+    bufferMinutes: hours.bufferTimeMinutes,
+    staffName: staffName || undefined,
+    blockedSlots: hours.blockedSlots,
+  });
+  if (!saved.ok) {
+    return NextResponse.json(
+      {
+        error: staffName
+          ? `設計師「${staffName}」此時段已有重疊預約（併發衝突），請改選其他時間`
+          : "此時段剛被預約，請改選其他時間",
+        conflict: true,
+      },
+      { status: 409 },
+    );
+  }
 
   try {
     await patchStoreContent(storeSlug, {
@@ -668,20 +691,29 @@ export async function POST(request: Request) {
   });
 
   let notify: Record<string, unknown> = {};
+  let notifyOk = false;
   try {
-    notify = await notifyBookingCreated(booking, {
+    const created = await notifyBookingCreated(booking, {
       sellerEmails,
       sellerLineUserIds,
     });
-    updateBookingDb(booking.id, {
-      sellerNotifiedAt: new Date().toISOString(),
-      customerSuccessNotifiedAt:
-        customerEmail || customerLineUserId
-          ? new Date().toISOString()
-          : undefined,
-    });
+    notify = created.results;
+    notifyOk = created.ok;
+    if (created.ok) {
+      updateBookingDb(booking.id, {
+        sellerNotifiedAt: new Date().toISOString(),
+        customerSuccessNotifiedAt:
+          customerEmail || customerLineUserId
+            ? new Date().toISOString()
+            : undefined,
+      });
+    }
   } catch (error) {
     console.error("[booking-notify]", booking.id, error);
+    notify = {
+      ok: false,
+      error: error instanceof Error ? error.message : "notify failed",
+    };
   }
 
   return NextResponse.json({
@@ -712,10 +744,13 @@ export async function POST(request: Request) {
         }
       : null,
     notify,
+    notifyOk,
     message: needsDeposit
       ? bankLastFive.length === 5
         ? "預約已建立，匯款後五碼已送出，待店家對帳確認訂金。"
         : "預約已建立，請依說明完成匯款訂金並回填後五碼。"
-      : "預約已送出。顧客將收到成功通知與行前提醒；店家／服務人員已收到即時接單推播（依方案與串接設定）。",
+      : notifyOk
+        ? "預約已送出。顧客將收到成功通知與行前提醒；店家／服務人員已收到即時接單推播（依方案與串接設定）。"
+        : "預約已建立，但部分通知推播失敗，系統已記錄；店家請於後台確認預約。",
   });
 }

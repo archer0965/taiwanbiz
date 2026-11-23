@@ -8,7 +8,6 @@ import {
   stylistAcceptsSlot,
   upsertCustomerFromBooking,
 } from "@/lib/beauty-ops";
-import { slotConflicts } from "@/lib/booking-conflicts";
 import {
   computeRemindAt,
   createBookingId,
@@ -20,8 +19,9 @@ import {
   type BookingStatus,
 } from "@/lib/bookings";
 import {
+  cancelBookingReleaseSlotDb,
   listBookingsForStoreDb,
-  saveBookingDb,
+  saveBookingIfSlotFreeDb,
   updateBookingDb,
 } from "@/lib/bookings-db.server";
 import {
@@ -319,27 +319,6 @@ async function handleManualBooking(
     }
   }
 
-  if (
-    slotConflicts({
-      bookings: listBookingsForStoreDb(storeSlug),
-      dateYmd,
-      timeHm,
-      durationMinutes,
-      bufferMinutes: hours.bufferTimeMinutes,
-      staffName: staffName || undefined,
-      blockedSlots: hours.blockedSlots,
-    })
-  ) {
-    return NextResponse.json(
-      {
-        error: staffName
-          ? `設計師「${staffName}」此時段已有重疊預約`
-          : "此時段已與現有預約重疊，請改選其他時間",
-      },
-      { status: 409 },
-    );
-  }
-
   const booking: BookingRecord = {
     id: createBookingId(),
     storeSlug,
@@ -362,7 +341,27 @@ async function handleManualBooking(
     depositMethod: "none",
   };
 
-  saveBookingDb(booking);
+  const saved = await saveBookingIfSlotFreeDb({
+    booking,
+    dateYmd,
+    timeHm,
+    durationMinutes,
+    bufferMinutes: hours.bufferTimeMinutes,
+    staffName: staffName || undefined,
+    blockedSlots: hours.blockedSlots,
+  });
+  if (!saved.ok) {
+    return NextResponse.json(
+      {
+        error: staffName
+          ? `設計師「${staffName}」此時段已有重疊預約`
+          : "此時段已與現有預約重疊，請改選其他時間",
+        conflict: true,
+      },
+      { status: 409 },
+    );
+  }
+
   await patchStoreContent(storeSlug, {
     customers: upsertCustomerFromBooking({
       list: content?.customers || [],
@@ -455,7 +454,11 @@ async function handleUpdateStatus(
   }
 
   const prev = resolveBookingStatus(existing);
-  const updated = updateBookingDb(bookingId, { status });
+  // 取消必須釋放時段：走序列化寫入，衝突檢查會略過 cancelled
+  const updated =
+    status === "cancelled"
+      ? await cancelBookingReleaseSlotDb(bookingId)
+      : updateBookingDb(bookingId, { status });
   if (!updated) {
     return NextResponse.json({ error: "更新失敗" }, { status: 500 });
   }
