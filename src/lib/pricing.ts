@@ -41,7 +41,7 @@ export const marketTypes: MarketType[] = [
 ];
 
 export const PRICING_NOTE =
-  "所有方案皆可隨時升降級。先註冊並登入後台，再點「開始免費試用七天」開通全功能（註冊拓新雲端或本站帳號本身不會開始試用）。訂閱費用為拓脈平台月費／年費，與店內現場收款無關。價格與折扣以拓新雲端主站（paycheck.com.de）為權威：早鳥／一般試用 7 天、特約店家／推廣大使 14 天；早鳥限定 15 名（本站獨立計算）終身月繳 9 折、半年 85 折、整年 8 折；特約／大使續約月 9／半年 82／年 75 折。訂閱管家為永久免費個人工具，不含在拓脈付費方案內。忘記續費可保留網站 30 天。";
+  "所有方案皆可隨時升降級。先註冊並登入後台，再點「開始免費試用七天」開通全功能（註冊拓新雲端或本站帳號本身不會開始試用）。訂閱費用為拓脈平台月費／年費，與店內現場收款無關。價格與折扣以拓新雲端主站（paycheck.com.de）為權威：早鳥／一般試用 7 天、特約店家 14 天；早鳥限定 15 名（本站獨立計算）終身月繳 9 折、半年 85 折、整年 8 折；特約／大使續約月 9／半年 82／年 75 折。訂閱管家為永久免費個人工具，不含在拓脈付費方案內。忘記續費可保留網站 30 天。";
 
 /** @deprecated 網拍方案已下架；保留常數避免舊匯入炸掉 */
 export const SHOP_PRICING_NOTE =
@@ -98,7 +98,7 @@ export type FoundingBillingCycle = keyof typeof FOUNDING_CYCLE_RATES;
 export const FOUNDING_MEMBER_RATE = FOUNDING_CYCLE_RATES.annual;
 
 /**
- * 特約店家／推廣大使續約折扣 — hub TIER_META.vip：
+ * 特約店家續約折扣 — hub TIER_META.vip：
  * 月繳 9 折／半年 82 折／年繳 75 折（人工審核後套用）。
  */
 export const PARTNER_CYCLE_RATES = {
@@ -122,7 +122,7 @@ export const FOUNDING_TRIAL_DAYS = 7;
 /** 一般新店試用天數（hub TIER_META.general.trialDays；與早鳥同為 7） */
 export const STANDARD_TRIAL_DAYS = 7;
 
-/** 特約店家／推廣大使試用天數（hub TIER_META.vip.trialDays） */
+/** 特約店家試用天數（hub TIER_META.vip.trialDays） */
 export const PARTNER_TRIAL_DAYS = 14;
 
 /** 後台 CTA */
@@ -360,7 +360,7 @@ export const PRICING_FAQS = [
   {
     id: "q0",
     question: "早鳥、一般與特約的試用天數有什麼差別？",
-    answer: `以拓新雲端主站為準：早鳥名額限量 ${FOUNDING_MEMBER_LIMIT} 名（拓脈獨立計算），於後台點「開始免費試用七天」後開通 ${FOUNDING_TRIAL_DAYS} 天全功能，並鎖定終身月繳 9 折、半年 85 折、整年 8 折。額滿後一般新店同為 ${STANDARD_TRIAL_DAYS} 天試用、續約依原價。特約店家／推廣大使經主站人工審核後為 ${PARTNER_TRIAL_DAYS} 天試用，續約月 9／半年 82／年 75 折。註冊帳號本身不會開始試用。忘記續費時網站可保留 30 天。`,
+    answer: `以拓新雲端主站為準：早鳥名額限量 ${FOUNDING_MEMBER_LIMIT} 名（拓脈獨立計算），於後台點「開始免費試用七天」後開通 ${FOUNDING_TRIAL_DAYS} 天全功能，並鎖定終身月繳 9 折、半年 85 折、整年 8 折。額滿後一般新店同為 ${STANDARD_TRIAL_DAYS} 天試用、續約依原價。特約店家經主站人工審核後為 ${PARTNER_TRIAL_DAYS} 天試用，續約月 9／半年 82／年 75 折。註冊帳號本身不會開始試用。忘記續費時網站可保留 30 天。`,
   },
   {
     id: "q1",
