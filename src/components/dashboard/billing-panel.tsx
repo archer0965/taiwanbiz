@@ -497,15 +497,17 @@ export function BillingPanel() {
                   </div>
                 ) : null}
 
-                {!needsPaid && !cancelled && !bookingPaused ? (
+                {!needsPaid && !cancelled ? (
                   <div className="rounded-xl border border-stone-200 bg-white p-4">
                     <p className="text-sm font-semibold text-stone-900">
-                      方案切換與續費（綠界）
+                      {bookingPaused
+                        ? "恢復訂閱與付款（綠界）"
+                        : "方案切換與續費（綠界）"}
                     </p>
                     <p className="mt-1 text-xs text-stone-500">
-                      選擇方案與月繳／年繳後，前往綠界完成付款即可展延到期日（創始
-                      8 折與推薦點數會自動折抵，每期最多{" "}
-                      {formatTwd(REFERRAL_CREDIT_PER_CYCLE_CAP)}）。
+                      {bookingPaused
+                        ? "完成綠界線上付款後將自動恢復前台預約與展延到期日。"
+                        : `選擇方案與月繳／年繳後，前往綠界完成付款即可展延到期日（創始 8 折與推薦點數會自動折抵，每期最多 ${formatTwd(REFERRAL_CREDIT_PER_CYCLE_CAP)}）。`}
                     </p>
                     <div className="mt-3">
                       <EcpaySubscriptionPayForm

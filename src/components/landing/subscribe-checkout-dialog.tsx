@@ -513,6 +513,12 @@ export function SubscribeCheckoutDialog({ target, onClose }: Props) {
             >
               取消
             </Button>
+            <a
+              href="/dashboard/billing"
+              className="pt-1 text-center text-xs font-medium text-teal-700 underline-offset-2 hover:underline"
+            >
+              已有店家帳號？直接前往後台綠界付款／續費 →
+            </a>
           </div>
         </form>
       </div>

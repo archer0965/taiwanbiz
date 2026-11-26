@@ -252,8 +252,20 @@ export type EcpayFormPayload = {
 };
 
 function formatTradeDate(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value || "00";
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}/${get("month")}/${get("day")} ${hour}:${get("minute")}:${get("second")}`;
 }
 
 export function createMerchantMemberId(storeId: string) {
@@ -284,6 +296,14 @@ function paymentInfoUrl() {
 
 function clientReturnUrl(storeId: string) {
   return `${siteBaseUrl()}/welcome?storeId=${encodeURIComponent(storeId)}`;
+}
+
+/** ECPay OrderResultURL sends browser POST; proxy via API route (303 → GET) to avoid 405 on /welcome. */
+function orderResultReturnUrl(targetPath: string, storeId?: string) {
+  const qs = new URLSearchParams();
+  if (storeId) qs.set("storeId", storeId);
+  qs.set("next", targetPath);
+  return `${siteBaseUrl()}/api/webhooks/ecpay/return?${qs.toString()}`;
 }
 
 function aioActionUrl() {
@@ -337,7 +357,10 @@ export function buildPeriodOrderPayload(input: {
       200,
     ),
     ReturnURL: webhookUrl(),
-    OrderResultURL: clientReturnUrl(input.storeId),
+    OrderResultURL: orderResultReturnUrl(
+      `/welcome?storeId=${encodeURIComponent(input.storeId)}`,
+      input.storeId,
+    ),
     ClientBackURL: clientReturnUrl(input.storeId),
     ChoosePayment: "Credit", // 定期定額必須 Credit；未開通時請改走一次付清
     EncryptType: "1",
@@ -405,7 +428,10 @@ export function buildAioCheckoutPayload(input: {
     TradeDesc: sanitizeEcpayText(`Nova Crest Pulse ${safePlan}`, 200),
     ItemName: sanitizeEcpayText(`Nova Crest Pulse ${safePlan} x1`, 200),
     ReturnURL: webhookUrl(),
-    OrderResultURL: clientReturnUrl(input.storeId),
+    OrderResultURL: orderResultReturnUrl(
+      `/welcome?storeId=${encodeURIComponent(input.storeId)}`,
+      input.storeId,
+    ),
     ClientBackURL: clientReturnUrl(input.storeId),
     ChoosePayment: choosePayment,
     EncryptType: "1",
@@ -498,10 +524,14 @@ export function buildBookingDepositCheckoutPayload(input: {
     MerchantTradeDate: formatTradeDate(new Date()),
     PaymentType: "aio",
     TotalAmount: String(amount),
-    TradeDesc: `拓脈預約訂金 ${input.storeSlug}`.slice(0, 200),
-    ItemName: input.itemName.slice(0, 200),
+    TradeDesc: sanitizeEcpayText(`拓脈預約訂金 ${input.storeSlug}`, 200),
+    ItemName: sanitizeEcpayText(input.itemName, 200) || "預約訂金",
     ReturnURL: `${siteBaseUrl()}/api/webhooks/ecpay`,
-    OrderResultURL: `${siteBaseUrl()}/stores/${encodeURIComponent(input.storeSlug)}?booking=${encodeURIComponent(input.bookingId)}&deposit=1`,
+    OrderResultURL: orderResultReturnUrl(
+      `/stores/${encodeURIComponent(input.storeSlug)}?booking=${encodeURIComponent(input.bookingId)}&deposit=1`,
+      input.storeSlug,
+    ),
+    ClientBackURL: `${siteBaseUrl()}/stores/${encodeURIComponent(input.storeSlug)}?booking=${encodeURIComponent(input.bookingId)}&deposit=1`,
     ChoosePayment: choosePayment,
     EncryptType: "1",
     CustomField1: input.storeSlug,
@@ -542,10 +572,14 @@ export function buildShopOrderCheckoutPayload(input: {
     MerchantTradeDate: formatTradeDate(new Date()),
     PaymentType: "aio",
     TotalAmount: String(amount),
-    TradeDesc: `Pulse Shop ${input.storeSlug}`.slice(0, 200),
-    ItemName: input.itemName.slice(0, 200),
+    TradeDesc: sanitizeEcpayText(`Pulse Shop ${input.storeSlug}`, 200),
+    ItemName: sanitizeEcpayText(input.itemName, 200) || "賣場商品",
     ReturnURL: `${siteBaseUrl()}/api/webhooks/ecpay`,
-    OrderResultURL: `${siteBaseUrl()}/stores/${encodeURIComponent(input.storeSlug)}?order=${encodeURIComponent(input.orderId)}&paid=1`,
+    OrderResultURL: orderResultReturnUrl(
+      `/stores/${encodeURIComponent(input.storeSlug)}?order=${encodeURIComponent(input.orderId)}&paid=1`,
+      input.storeSlug,
+    ),
+    ClientBackURL: `${siteBaseUrl()}/stores/${encodeURIComponent(input.storeSlug)}?order=${encodeURIComponent(input.orderId)}&paid=1`,
     ChoosePayment: choosePayment,
     EncryptType: "1",
     CustomField1: input.storeSlug,
@@ -910,8 +944,7 @@ function sanitizeGoodsName(raw: string) {
 }
 
 function formatMerchantTradeDate(d = new Date()) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return formatTradeDate(d);
 }
 
 export function verifyLogisticsCheckMacValue(params: Record<string, string>) {
