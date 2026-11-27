@@ -188,16 +188,25 @@ export function siteBaseUrl() {
  * 綠界 CheckMacValue（SHA256）
  * 官方流程：排序 → HashKey/HashIV 串接 → URL encode → 小寫 → 特殊字元還原 → SHA256 → 大寫
  */
-export function buildCheckMacValue(params: Record<string, string>) {
+export function buildCheckMacValue(
+  params: Record<string, string>,
+  options?: { includeEmpty?: boolean; caseInsensitiveSort?: boolean },
+) {
+  const includeEmpty = options?.includeEmpty ?? false;
+  const caseInsensitiveSort = options?.caseInsensitiveSort ?? false;
   const sorted = Object.keys(params)
     .filter(
       (key) =>
         key !== "CheckMacValue" &&
         params[key] !== undefined &&
         params[key] !== null &&
-        String(params[key]) !== "",
+        (includeEmpty || String(params[key]) !== ""),
     )
-    .sort((a, b) => (a > b ? 1 : -1))
+    .sort((a, b) => {
+      const ka = caseInsensitiveSort ? a.toLowerCase() : a;
+      const kb = caseInsensitiveSort ? b.toLowerCase() : b;
+      return ka > kb ? 1 : ka < kb ? -1 : 0;
+    })
     .map((key) => `${key}=${params[key]}`)
     .join("&");
 
@@ -217,12 +226,23 @@ export function buildCheckMacValue(params: Record<string, string>) {
   return createHash("sha256").update(encoded).digest("hex").toUpperCase();
 }
 
+/**
+ * 驗證綠界回調 CheckMacValue。
+ * 綠界正式 ReturnURL 回調會夾帶空字串欄位（如 StoreID=、CustomField4=）並納入雜湊計算，
+ * 因此優先以 includeEmpty=true（含不分大小寫與 ASCII 排序）驗證，並保留 includeEmpty=false 相容。
+ */
 export function verifyCheckMacValue(params: Record<string, string>) {
-  const incoming = params.CheckMacValue?.toUpperCase();
+  const incoming = (params.CheckMacValue || "").trim().toUpperCase();
   if (!incoming) return false;
   const rest = { ...params };
   delete rest.CheckMacValue;
-  return buildCheckMacValue(rest) === incoming;
+  const variants = [
+    { includeEmpty: true, caseInsensitiveSort: true },
+    { includeEmpty: true, caseInsensitiveSort: false },
+    { includeEmpty: false, caseInsensitiveSort: true },
+    { includeEmpty: false, caseInsensitiveSort: false },
+  ];
+  return variants.some((opts) => buildCheckMacValue(rest, opts) === incoming);
 }
 
 export type DynamicCheckoutInput = {
