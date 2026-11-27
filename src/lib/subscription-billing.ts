@@ -386,7 +386,7 @@ export async function handlePaymentWebhook(input: {
 
 /**
  * 前台註冊店家：不開始試用、不占用早鳥名額。
- * 需至後台點「開始免費試用七天」才開通全功能（早鳥／一般 7 天；特約／大使 14 天由主站審核）。
+ * 需至後台點「開始免費試用七天」才開通全功能（早鳥／一般 7 天；特約店家 14 天由主站審核）。
  */
 export async function registerStoreAwaitingTrial(input: {
   storeId: string;
@@ -675,7 +675,7 @@ export async function startFreeTrial(input: {
     earlyBird: claimFounding,
     founding: foundingAfter,
     message: claimFounding
-      ? `已開通 ${days} 天全功能試用，並取得早鳥資格（終身月繳 9 折／半年 85 折／年繳 8 折；月繳約 NT$ ${renewPreview.toLocaleString("zh-TW")}）。早鳥剩餘 ${foundingAfter.remaining}/${FOUNDING_MEMBER_LIMIT}。（特約／大使為 ${PARTNER_TRIAL_DAYS} 天試用，由主站審核）`
+      ? `已開通 ${days} 天全功能試用，並取得早鳥資格（終身月繳 9 折／半年 85 折／年繳 8 折；月繳約 NT$ ${renewPreview.toLocaleString("zh-TW")}）。早鳥剩餘 ${foundingAfter.remaining}/${FOUNDING_MEMBER_LIMIT}。（特約店家為 ${PARTNER_TRIAL_DAYS} 天試用，由主站審核）`
       : `已開通 ${days} 天全功能試用。早鳥名額已滿，續約依標準方案計價。`,
     redirectUrl: `/dashboard/billing`,
   };
@@ -936,7 +936,7 @@ function hasRenewedOnOrAfterDayBeforeExpiry(
 
 /**
  * 到期提醒：
- * - 早鳥／一般 7 天試用、特約／大使 14 天試用、正式訂閱：到期前 3 天與前 1 天
+ * - 早鳥／一般 7 天試用、特約店家 14 天試用、正式訂閱：到期前 3 天與前 1 天
  * 若已在到期前一日（含）完成續費則不通知。
  */
 export async function runExpiryReminderCron(now = new Date()) {
